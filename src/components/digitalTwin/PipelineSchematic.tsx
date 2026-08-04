@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text as RNText } from 'react-native';
+import { View, Text as RNText, StyleSheet } from 'react-native';
 import Svg, { Path, Rect, Circle, G, Defs, LinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import Animated, {
   useSharedValue,
@@ -23,6 +23,7 @@ export const PipelineSchematic: React.FC = () => {
   // Animation Controls
   const dashOffset = useSharedValue(0);
   const rotation = useSharedValue(0);
+  const dotOpacity = useSharedValue(1);
 
   // Dynamic animation speed calculated from flow rate with infinite loop guaranteed (-1)
   useEffect(() => {
@@ -49,18 +50,27 @@ export const PipelineSchematic: React.FC = () => {
     }
   }, [pumpStatus]);
 
+  // Pulse animation for the status dot
+  useEffect(() => {
+    dotOpacity.value = withRepeat(
+      withTiming(0.3, { duration: 1000 }),
+      -1,
+      true
+    );
+  }, []);
+
   const animatedFlowProps = useAnimatedProps(() => ({
     strokeDashoffset: dashOffset.value,
   }));
 
-  const animatedPumpStyle = useAnimatedStyle(() => ({
+  // Fixed: transform must be an array of objects, not a string
+  const animatedPumpProps = useAnimatedProps(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
-  // For SVG <G> we must supply a transform attribute string via animatedProps
-  const animatedPumpProps = useAnimatedProps(() => ({
-    transform: `rotate(${rotation.value})`,
-  } as any));
+  const dotAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: dotOpacity.value,
+  }));
 
   // Dynamic status color coding
   const getPressureColor = () => {
@@ -81,18 +91,16 @@ export const PipelineSchematic: React.FC = () => {
   const tankY = 120 - fillHeight;
 
   return (
-    <View className="bg-slate-900 border border-slate-800 rounded-3xl p-4 my-2 shadow-2xl relative overflow-hidden">
-      <View className="flex-row justify-between items-center mb-2 px-2">
-        <View className="flex-row items-center space-x-2">
-          <View className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
-          <RNText className="text-slate-300 font-bold text-xs tracking-wider uppercase">
-            SCADA Digital Twin Pipeline Network
-          </RNText>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Animated.View style={[styles.statusDot, dotAnimatedStyle]} />
+          <RNText style={styles.headerTitle}>SCADA Digital Twin Pipeline Network</RNText>
         </View>
-        <RNText className="text-cyan-400 text-xs font-mono">FLOW: {flowRate} L/min</RNText>
+        <RNText style={styles.flowText}>FLOW: {flowRate} L/min</RNText>
       </View>
 
-      <Svg viewBox="0 0 380 220" className="w-full h-56">
+      <Svg viewBox="0 0 380 220" style={styles.svg}>
         <Defs>
           <LinearGradient id="waterGrad" x1="0%" y1="0%" x2="100%" y2="0%">
             <Stop offset="0%" stopColor="#06B6D4" />
@@ -118,7 +126,7 @@ export const PipelineSchematic: React.FC = () => {
           d="M 30 110 L 80 110 M 110 110 L 170 110 L 170 60 L 250 60 L 250 110 L 280 110 M 320 120 L 360 120"
           stroke="url(#waterGrad)"
           strokeWidth="6"
-          strokeDasharray="10 6"
+          strokeDasharray={[10, 6]}
           animatedProps={animatedFlowProps}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -129,7 +137,8 @@ export const PipelineSchematic: React.FC = () => {
         <SvgText x="15" y="152" fill="#94A3B8" fontSize="8" fontWeight="bold">SOURCE</SvgText>
 
         {/* --- NODE 2: PUMP STATION WITH ROTATING TURBINE --- */}
-        <G transform="translate(95, 110)">
+        {/* Fixed transform to array */}
+        <G transform={[{ translateX: 95 }, { translateY: 110 }]}>
           <Circle r="18" fill="#1E293B" stroke={getPumpColor()} strokeWidth="3" />
           {/* Animated Internal Turbine Impeller */}
           <AnimatedG animatedProps={animatedPumpProps}>
@@ -140,7 +149,7 @@ export const PipelineSchematic: React.FC = () => {
         <SvgText x="82" y="142" fill="#94A3B8" fontSize="9" fontWeight="bold">PUMP 01</SvgText>
 
         {/* --- NODE 3: PRESSURE SENSOR --- */}
-        <G transform="translate(170, 60)">
+        <G transform={[{ translateX: 170 }, { translateY: 60 }]}>
           <Circle r="10" fill="#0F172A" stroke={getPressureColor()} strokeWidth="3" />
           <Circle r="4" fill={getPressureColor()} />
         </G>
@@ -149,7 +158,7 @@ export const PipelineSchematic: React.FC = () => {
         </SvgText>
 
         {/* --- NODE 4: FLOW SENSOR --- */}
-        <G transform="translate(250, 60)">
+        <G transform={[{ translateX: 250 }, { translateY: 60 }]}>
           <Rect x="-10" y="-10" width="20" height="20" rx="4" fill="#0F172A" stroke="#06B6D4" strokeWidth="2" />
           <SvgText x="-6" y="4" fill="#06B6D4" fontSize="8" fontWeight="bold">FT</SvgText>
         </G>
@@ -175,3 +184,55 @@ export const PipelineSchematic: React.FC = () => {
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: '#0F172A',      // slate-900
+    borderWidth: 1,
+    borderColor: '#1E293B',          // slate-800
+    borderRadius: 24,
+    padding: 16,
+    marginVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 5,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 8,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#22D3EE',       // cyan-400
+    marginRight: 8,
+  },
+  headerTitle: {
+    color: '#CBD5E1',                // slate-300
+    fontWeight: 'bold',
+    fontSize: 12,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  flowText: {
+    color: '#22D3EE',                // cyan-400
+    fontSize: 12,
+    fontFamily: 'monospace',
+  },
+  svg: {
+    width: '100%',
+    height: 224,
+  },
+});

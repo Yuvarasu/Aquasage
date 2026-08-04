@@ -63,8 +63,8 @@ export default function DashboardScreen() {
 
         {/* --- DIGITAL TWIN PIPELINE SCHEMATIC --- */}
         <View style={{ marginVertical: 8 }}>
-          <PipelineSchematic />
-        </View>
+        <PipelineSchematic />
+      </View>
 
         {/* --- METRICS GRID --- */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginTop: 8 }}>
