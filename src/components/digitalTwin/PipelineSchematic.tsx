@@ -63,7 +63,6 @@ export const PipelineSchematic: React.FC = () => {
     strokeDashoffset: dashOffset.value,
   }));
 
-  // Fixed: transform must be an array of objects, not a string
   const animatedPumpProps = useAnimatedProps(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
   }));
@@ -76,11 +75,11 @@ export const PipelineSchematic: React.FC = () => {
   const getPressureColor = () => {
     if (pressure > 5.5) return '#EF4444'; // Extreme Red
     if (pressure > 4.2) return '#FACC15'; // Medium Warning
-    return '#22C55E';                     // Safe Green
+    return '#4ADE80';                   // Safe Green
   };
 
   const getPumpColor = () => {
-    if (pumpStatus === 'running') return '#22C55E';
+    if (pumpStatus === 'running') return '#4ADE80';
     if (pumpStatus === 'fault') return '#EF4444';
     return '#64748B';
   };
@@ -95,9 +94,9 @@ export const PipelineSchematic: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Animated.View style={[styles.statusDot, dotAnimatedStyle]} />
-          <RNText style={styles.headerTitle}>SCADA Digital Twin Pipeline Network</RNText>
+          <RNText style={styles.headerTitle}>SCADA Hydraulic Digital Twin</RNText>
         </View>
-        <RNText style={styles.flowText}>FLOW: {flowRate} L/min</RNText>
+        <RNText style={styles.flowText}>FLOW: {flowRate.toFixed(1)} L/min</RNText>
       </View>
 
       <Svg viewBox="0 0 380 220" style={styles.svg}>
@@ -115,7 +114,7 @@ export const PipelineSchematic: React.FC = () => {
         {/* --- PIPELINE PATHS (STATIC BASE) --- */}
         <Path
           d="M 30 110 L 80 110 M 110 110 L 170 110 L 170 60 L 250 60 L 250 110 L 280 110 M 320 120 L 360 120"
-          stroke="#1E293B"
+          stroke="#10233A"
           strokeWidth="12"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -133,24 +132,23 @@ export const PipelineSchematic: React.FC = () => {
         />
 
         {/* --- NODE 1: WATER RESERVOIR --- */}
-        <Rect x="10" y="80" width="30" height="60" rx="6" fill="#334155" stroke="#475569" strokeWidth="2" />
+        <Rect x="10" y="80" width="30" height="60" rx="6" fill="#10233A" stroke="#1E293B" strokeWidth="2" />
         <SvgText x="15" y="152" fill="#94A3B8" fontSize="8" fontWeight="bold">SOURCE</SvgText>
 
         {/* --- NODE 2: PUMP STATION WITH ROTATING TURBINE --- */}
-        {/* Fixed transform to array */}
         <G transform={[{ translateX: 95 }, { translateY: 110 }]}>
-          <Circle r="18" fill="#1E293B" stroke={getPumpColor()} strokeWidth="3" />
+          <Circle r="18" fill="#10233A" stroke={getPumpColor()} strokeWidth="3" />
           {/* Animated Internal Turbine Impeller */}
           <AnimatedG animatedProps={animatedPumpProps}>
-            <Circle r="4" fill="#06B6D4" />
-            <Path d="M -12 0 L 12 0 M 0 -12 L 0 12" stroke="#06B6D4" strokeWidth="2" />
+            <Circle r="4" fill="#00C2FF" />
+            <Path d="M -12 0 L 12 0 M 0 -12 L 0 12" stroke="#00C2FF" strokeWidth="2" />
           </AnimatedG>
         </G>
         <SvgText x="82" y="142" fill="#94A3B8" fontSize="9" fontWeight="bold">PUMP 01</SvgText>
 
         {/* --- NODE 3: PRESSURE SENSOR --- */}
         <G transform={[{ translateX: 170 }, { translateY: 60 }]}>
-          <Circle r="10" fill="#0F172A" stroke={getPressureColor()} strokeWidth="3" />
+          <Circle r="10" fill="#10233A" stroke={getPressureColor()} strokeWidth="3" />
           <Circle r="4" fill={getPressureColor()} />
         </G>
         <SvgText x="145" y="42" fill="#94A3B8" fontSize="8" fontWeight="bold">
@@ -159,12 +157,12 @@ export const PipelineSchematic: React.FC = () => {
 
         {/* --- NODE 4: FLOW SENSOR --- */}
         <G transform={[{ translateX: 250 }, { translateY: 60 }]}>
-          <Rect x="-10" y="-10" width="20" height="20" rx="4" fill="#0F172A" stroke="#06B6D4" strokeWidth="2" />
-          <SvgText x="-6" y="4" fill="#06B6D4" fontSize="8" fontWeight="bold">FT</SvgText>
+          <Rect x="-10" y="-10" width="20" height="20" rx="4" fill="#10233A" stroke="#00C2FF" strokeWidth="2" />
+          <SvgText x="-6" y="4" fill="#00C2FF" fontSize="8" fontWeight="bold">FT</SvgText>
         </G>
 
         {/* --- NODE 5: ELEVATED VILLAGE STORAGE TANK --- */}
-        <Rect x="280" y="50" width="40" height="70" rx="4" fill="#0F172A" stroke="#475569" strokeWidth="2" />
+        <Rect x="280" y="50" width="40" height="70" rx="4" fill="#10233A" stroke="#1E293B" strokeWidth="2" />
         <Rect
           x="282"
           y={tankY}
@@ -178,7 +176,7 @@ export const PipelineSchematic: React.FC = () => {
         </SvgText>
 
         {/* --- NODE 6: CONSUMER DISTRIBUTION NETWORK --- */}
-        <Circle cx="360" cy="120" r="8" fill="#334155" stroke="#06B6D4" strokeWidth="2" />
+        <Circle cx="360" cy="120" r="8" fill="#10233A" stroke="#00C2FF" strokeWidth="2" />
         <SvgText x="340" y="140" fill="#94A3B8" fontSize="8" fontWeight="bold">TOWN</SvgText>
       </Svg>
     </View>
@@ -187,10 +185,10 @@ export const PipelineSchematic: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0F172A',      // slate-900
+    backgroundColor: '#10233A',      // Upgraded to match industrial card containers
     borderWidth: 1,
-    borderColor: '#1E293B',          // slate-800
-    borderRadius: 24,
+    borderColor: 'rgba(6, 182, 212, 0.2)', // Subtle cyan border glow
+    borderRadius: 20,
     padding: 16,
     marginVertical: 8,
     shadowColor: '#000',
@@ -206,33 +204,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#22D3EE',       // cyan-400
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#00C2FF',      // Matching industrial cyan
     marginRight: 8,
   },
   headerTitle: {
-    color: '#CBD5E1',                // slate-300
+    color: '#FFFFFF',                // Clean white header
     fontWeight: 'bold',
     fontSize: 12,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   flowText: {
-    color: '#22D3EE',                // cyan-400
-    fontSize: 12,
+    color: '#38BDF8',                // Bright blue badge
+    fontSize: 11,
     fontFamily: 'monospace',
+    fontWeight: 'bold',
   },
   svg: {
     width: '100%',
-    height: 224,
+    height: 220,
   },
 });
