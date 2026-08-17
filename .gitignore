@@ -1,0 +1,267 @@
+# ==========================================
+# AquaSage - Full Stack Git Ignore
+# FastAPI + Python + Next.js + PostgreSQL
+# ==========================================
+
+
+# ------------------------------------------
+# PYTHON / FASTAPI
+# ------------------------------------------
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+backend/.venv/
+backend/env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Python build files
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# Type checking / linting
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+
+# ------------------------------------------
+# FASTAPI / UVICORN
+# ------------------------------------------
+
+*.log
+uvicorn.log
+
+# Local runtime files
+*.pid
+
+
+# ------------------------------------------
+# ENVIRONMENT VARIABLES / SECRETS
+# ------------------------------------------
+
+.env
+.env.*
+!.env.example
+
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Secrets
+*.pem
+*.key
+*.crt
+
+
+# ------------------------------------------
+# NEXT.JS
+# ------------------------------------------
+
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Next.js cache
+frontend/.next/cache/
+
+# Vercel
+frontend/.vercel/
+
+# Next.js generated files
+frontend/next-env.d.ts
+
+
+# ------------------------------------------
+# NODE / NPM
+# ------------------------------------------
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.npm/
+.yarn/
+.pnpm-debug.log*
+
+# Optional package manager files
+# Keep package-lock.json / yarn.lock / pnpm-lock.yaml
+# Do NOT ignore them.
+
+
+# ------------------------------------------
+# REACT / VITE
+# ------------------------------------------
+
+frontend/dist/
+frontend/.vite/
+
+
+# ------------------------------------------
+# POSTGRESQL
+# ------------------------------------------
+
+# PostgreSQL local data
+postgres-data/
+postgres_data/
+
+# PostgreSQL dumps / backups
+*.sql.gz
+*.dump
+*.backup
+
+# Local database files
+*.sqlite
+*.sqlite3
+*.db
+
+
+# ------------------------------------------
+# ALEMBIC
+# ------------------------------------------
+
+# DO NOT ignore Alembic migrations!
+# alembic/versions/ should be committed.
+
+# Alembic cache
+alembic/__pycache__/
+backend/alembic/__pycache__/
+
+
+# ------------------------------------------
+# IDE / EDITORS
+# ------------------------------------------
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# VS Code local history
+.history/
+
+
+# ------------------------------------------
+# WINDOWS
+# ------------------------------------------
+
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Windows crash dumps
+*.dmp
+
+
+# ------------------------------------------
+# MACOS
+# ------------------------------------------
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+
+# ------------------------------------------
+# TEMPORARY FILES
+# ------------------------------------------
+
+*.tmp
+*.temp
+*.bak
+*.old
+
+tmp/
+temp/
+
+# Logs
+logs/
+*.log
+
+
+# ------------------------------------------
+# TEST / GENERATED FILES
+# ------------------------------------------
+
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated uploads
+uploads/
+backend/uploads/
+
+# Generated exports
+exports/
+backend/exports/
+
+
+# ------------------------------------------
+# AI / ML GENERATED FILES
+# ------------------------------------------
+
+# Model files
+*.pt
+*.pth
+*.onnx
+*.bin
+*.safetensors
+
+# Local vector databases
+chroma/
+chromadb/
+*.faiss
+
+# Local ML cache
+.cache/
+huggingface_cache/
+
+
+# ------------------------------------------
+# DOCKER
+# ------------------------------------------
+
+# Local Docker volumes
+docker-data/
+docker-volumes/
+
+
+# ------------------------------------------
+# PROJECT-SPECIFIC
+# ------------------------------------------
+
+# Local development files
+.local/
+.local.*
+
+# Generated API documentation
+openapi.json
+
+# Local configuration
+config.local.*
