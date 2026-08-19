@@ -1,37 +1,44 @@
 import React, { useEffect } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StatusBar } from 'react-native';
+import { ScrollView, View, Text, StatusBar, RefreshControl } from 'react-native';
 import { PipelineSchematic } from '../../src/components/digitalTwin/PipelineSchematic';
 import { useTelemetryStore } from '../../src/store/useTelemetryStore';
 import { ApiService } from '../../src/services/apiService';
 import { socketService } from '../../src/services/socketService';
 import { mockSimulator } from '../../src/services/mockSimulator';
+import { ConnectionBanner } from '../../src/components/ui/ConnectionBanner';
+import { MetricTile } from '../../src/components/ui/MetricTile';
+import { GlassCard } from '../../src/components/ui/GlassCard';
 import { 
   Activity, 
   Gauge, 
   AlertTriangle, 
   Fan, 
-  Bell, 
-  Wifi, 
-  BatteryMedium,
-  TrendingUp,
-  ArrowRight
+  Droplets,
+  Zap,
+  FlaskConical
 } from 'lucide-react-native';
 
 export default function DashboardScreen() {
-  const { data, updateTelemetry, isConnected, isSimulating } = useTelemetryStore();
+  const { data, updateTelemetry, isSimulating, connectionState } = useTelemetryStore();
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const syncTelemetry = async () => {
+    setRefreshing(true);
+    const latest = await ApiService.fetchLatestTelemetry();
+    if (latest) {
+      updateTelemetry(latest, 'rest_polling');
+    }
+    setRefreshing(false);
+  };
 
   useEffect(() => {
-    // 1. Connect WebSocket to live backend stream at ws://10.10.32.35:8000/ws
+    // 1. Connect WebSocket to live backend stream
     socketService.connect();
 
     // 2. Fetch initial telemetry snapshot from backend REST API
-    ApiService.fetchLatestTelemetry().then((latest) => {
-      if (latest) {
-        updateTelemetry(latest);
-      }
-    });
+    syncTelemetry();
 
-    // 3. Fallback simulation if toggle enabled
+    // 3. Fallback simulation control
     if (isSimulating) {
       mockSimulator.start();
     } else {
@@ -43,155 +50,141 @@ export default function DashboardScreen() {
     };
   }, [isSimulating]);
 
+  // Derived state calculations
+  const isPressureHigh = data.pressure > 5.0;
+  const isLeakDetected = data.leakProbability > 0.4;
+  const isPumpRunning = data.pumpStatus === 'running';
+
   return (
     <View style={{ flex: 1, backgroundColor: '#071426' }}>
       <StatusBar barStyle="light-content" backgroundColor="#071426" />
 
-      {/* --- HEADER --- */}
-      <View style={{ paddingTop: 48, paddingBottom: 12, paddingHorizontal: 20, backgroundColor: '#071426', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* --- TOP APP HEADER --- */}
+      <View style={{ paddingTop: 48, paddingBottom: 10, paddingHorizontal: 20, backgroundColor: '#071426', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View>
           <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 18, letterSpacing: 2 }}>AQUA-TWIN</Text>
           <Text style={{ color: '#94A3B8', fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
-            8/3/2026 • 2:43:26 AM
+            SCADA HYDRAULIC DIGITAL TWIN
           </Text>
         </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#1E293B', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, flexDirection: 'row', alignItems: 'center', marginRight: 8 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ADE80', marginRight: 6 }} />
-            <Text style={{ color: '#4ADE80', fontSize: 10, fontWeight: 'bold' }}>ONLINE</Text>
-          </View>
-          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#10233A', borderWidth: 1, borderColor: '#1E293B', alignItems: 'center', justifyContent: 'center' }}>
-            <Wifi size={14} color="#94A3B8" />
-          </View>
-        </View>
       </View>
+
+      {/* --- LIVE CONNECTION DIAGNOSTIC BANNER --- */}
+      <ConnectionBanner />
 
       <ScrollView 
         contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={syncTelemetry}
+            tintColor="#00C2FF"
+            colors={['#00C2FF']}
+          />
+        }
       >
-        {/* --- HERO STATUS SECTION --- */}
-        <View style={{ marginBottom: 12, paddingHorizontal: 4 }}>
-          <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '900', letterSpacing: -0.5 }}>Water Distribution Network</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ADE80', marginRight: 6 }} />
-            <Text style={{ color: '#4ADE80', fontWeight: 'bold', fontSize: 12 }}>Online</Text>
-            <Text style={{ color: '#94A3B8', fontSize: 12, marginLeft: 6 }}>• Monitoring all sensors in real time</Text>
+        {/* --- HERO STATUS CARD --- */}
+        <GlassCard variant="cyan" style={{ marginBottom: 12 }} padding={14}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View>
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '900', letterSpacing: -0.3 }}>
+                Primary Distribution Matrix
+              </Text>
+              <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
+                Tank #1 (Main Elevated Storage) • Grid Sector Alpha
+              </Text>
+            </View>
+            <View style={{ backgroundColor: 'rgba(6, 182, 212, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+              <Text style={{ color: '#00C2FF', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold' }}>
+                50,000L CAP
+              </Text>
+            </View>
           </View>
-        </View>
+        </GlassCard>
 
         {/* --- DIGITAL TWIN PIPELINE SCHEMATIC --- */}
-        <View style={{ marginVertical: 8 }}>
-        <PipelineSchematic />
-      </View>
+        <View style={{ marginVertical: 4 }}>
+          <PipelineSchematic />
+        </View>
 
         {/* --- METRICS GRID --- */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginTop: 8 }}>
-          
-          {/* 1. Pressure Card */}
-          <View style={{ width: '48%', backgroundColor: '#10233A', borderWidth: 1, borderColor: 'rgba(6, 182, 212, 0.2)', borderRadius: 16, padding: 16, marginVertical: 6, justifyContent: 'space-between' }}>
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <Text style={{ color: '#CBD5E1', fontSize: 12, fontWeight: 'bold' }}>Pressure</Text>
-                <Gauge size={16} color="#94A3B8" />
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 24, fontFamily: 'monospace' }}>{data.pressure.toFixed(2)}</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>BAR</Text>
-              </View>
-              <View style={{ backgroundColor: 'rgba(74, 222, 128, 0.2)', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(74, 222, 128, 0.3)', marginTop: 6 }}>
-                <Text style={{ color: '#4ADE80', fontSize: 9, fontWeight: 'bold' }}>Normal</Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(30, 41, 59, 0.6)' }}>
-              <TrendingUp size={16} color="#4ADE80" />
-              <ArrowRight size={14} color="#64748B" />
-            </View>
-          </View>
+          {/* 1. Pressure Transducer */}
+          <MetricTile
+            label="Line Pressure"
+            value={data.pressure.toFixed(2)}
+            unit="BAR"
+            icon={Gauge}
+            iconColor={isPressureHigh ? '#EF4444' : '#00C2FF'}
+            variant={isPressureHigh ? 'red' : 'cyan'}
+            statusText={isPressureHigh ? 'HIGH SURGE' : 'OPTIMAL'}
+            statusColor={isPressureHigh ? '#EF4444' : '#10B981'}
+            statusBg={isPressureHigh ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)'}
+          />
 
-          {/* 2. Flow Rate Card */}
-          <View style={{ width: '48%', backgroundColor: '#10233A', borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.2)', borderRadius: 16, padding: 16, marginVertical: 6, justifyContent: 'space-between' }}>
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <Text style={{ color: '#CBD5E1', fontSize: 12, fontWeight: 'bold' }}>Flow Rate</Text>
-                <Activity size={16} color="#38BDF8" />
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 24, fontFamily: 'monospace' }}>{data.flowRate.toFixed(1)}</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>L/min</Text>
-              </View>
-              <View style={{ height: 20, marginTop: 6 }} />
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(30, 41, 59, 0.6)' }}>
-              <TrendingUp size={16} color="#38BDF8" />
-              <ArrowRight size={14} color="#64748B" />
-            </View>
-          </View>
+          {/* 2. Flow Rate Meter */}
+          <MetricTile
+            label="Discharge Flow"
+            value={data.flowRate.toFixed(1)}
+            unit="L/min"
+            icon={Activity}
+            iconColor="#38BDF8"
+            variant="cyan"
+            statusText={data.flowRate > 0 ? 'ACTIVE FLOW' : 'STATIC'}
+            statusColor={data.flowRate > 0 ? '#38BDF8' : '#94A3B8'}
+            statusBg={data.flowRate > 0 ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.15)'}
+          />
 
-          {/* 3. Tank Level Card */}
-          <View style={{ width: '31%', backgroundColor: '#10233A', borderWidth: 1, borderColor: 'rgba(6, 182, 212, 0.2)', borderRadius: 16, padding: 12, marginVertical: 6, justifyContent: 'space-between' }}>
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <Text style={{ color: '#CBD5E1', fontSize: 11, fontWeight: 'bold' }}>Tank</Text>
-                <BatteryMedium size={14} color="#38BDF8" />
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 20, fontFamily: 'monospace' }}>{data.tankLevel.toFixed(0)}</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: 'bold' }}>%</Text>
-              </View>
-              <View style={{ width: '100%', backgroundColor: '#0F172A', height: 6, borderRadius: 3, overflow: 'hidden', marginVertical: 8, borderWidth: 1, borderColor: '#1E293B' }}>
-                <View style={{ width: `${data.tankLevel}%`, backgroundColor: '#38BDF8', height: '100%', borderRadius: 3 }} />
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(30, 41, 59, 0.6)' }}>
-              <TrendingUp size={12} color="#38BDF8" />
-              <ArrowRight size={12} color="#64748B" />
-            </View>
-          </View>
+          {/* 3. Tank Level */}
+          <MetricTile
+            label="Tank Volume"
+            value={data.tankLevel.toFixed(0)}
+            unit="%"
+            icon={Droplets}
+            iconColor="#06B6D4"
+            variant="cyan"
+            progressPercent={data.tankLevel}
+            subtext={`${((data.tankLevel / 100) * 50000).toLocaleString()} / 50,000 Liters`}
+          />
 
-          {/* 4. Leak Index Card */}
-          <View style={{ width: '31%', backgroundColor: '#10233A', borderWidth: 1, borderColor: 'rgba(74, 222, 128, 0.2)', borderRadius: 16, padding: 12, marginVertical: 6, justifyContent: 'space-between' }}>
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <Text style={{ color: '#CBD5E1', fontSize: 11, fontWeight: 'bold' }}>Leak</Text>
-                <AlertTriangle size={14} color="#FACC15" />
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 20, fontFamily: 'monospace' }}>{(data.leakProbability * 100).toFixed(0)}</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: 'bold' }}>%</Text>
-              </View>
-              <View style={{ backgroundColor: 'rgba(74, 222, 128, 0.2)', alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(74, 222, 128, 0.3)', marginVertical: 8 }}>
-                <Text style={{ color: '#4ADE80', fontSize: 8, fontWeight: 'bold' }}>Green</Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(30, 41, 59, 0.6)' }}>
-              <TrendingUp size={12} color="#4ADE80" />
-              <ArrowRight size={12} color="#64748B" />
-            </View>
-          </View>
+          {/* 4. Leak Risk Index */}
+          <MetricTile
+            label="Leak Probability"
+            value={(data.leakProbability * 100).toFixed(0)}
+            unit="%"
+            icon={AlertTriangle}
+            iconColor={isLeakDetected ? '#EF4444' : '#10B981'}
+            variant={isLeakDetected ? 'red' : 'emerald'}
+            statusText={isLeakDetected ? 'ANOMALY' : 'SECURE'}
+            statusColor={isLeakDetected ? '#EF4444' : '#10B981'}
+            statusBg={isLeakDetected ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)'}
+          />
 
-          {/* 5. Pump Health Card */}
-          <View style={{ width: '31%', backgroundColor: '#10233A', borderWidth: 1, borderColor: 'rgba(74, 222, 128, 0.2)', borderRadius: 16, padding: 12, marginVertical: 6, justifyContent: 'space-between' }}>
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <Text style={{ color: '#CBD5E1', fontSize: 11, fontWeight: 'bold' }}>Pump</Text>
-                <Fan size={14} color="#4ADE80" />
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 20, fontFamily: 'monospace' }}>{data.pumpHealthScore}</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: 'bold' }}>%</Text>
-              </View>
-              <View style={{ backgroundColor: 'rgba(74, 222, 128, 0.2)', alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(74, 222, 128, 0.3)', marginVertical: 8 }}>
-                <Text style={{ color: '#4ADE80', fontSize: 8, fontWeight: 'bold' }}>Healthy</Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(30, 41, 59, 0.6)' }}>
-              <TrendingUp size={12} color="#4ADE80" />
-              <ArrowRight size={12} color="#64748B" />
-            </View>
-          </View>
+          {/* 5. Pump VFD Health */}
+          <MetricTile
+            label="Pump Health"
+            value={`${data.pumpHealthScore}%`}
+            icon={Fan}
+            iconColor={isPumpRunning ? '#10B981' : '#64748B'}
+            variant={isPumpRunning ? 'emerald' : 'slate'}
+            statusText={isPumpRunning ? 'RUNNING' : 'STANDBY'}
+            statusColor={isPumpRunning ? '#10B981' : '#94A3B8'}
+            statusBg={isPumpRunning ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)'}
+          />
 
+          {/* 6. Water Quality / pH */}
+          <MetricTile
+            label="Water Quality"
+            value={data.pHLevel.toFixed(1)}
+            unit="pH"
+            icon={FlaskConical}
+            iconColor="#A855F7"
+            variant="cyan"
+            statusText={`${data.waterTurbidityNTU.toFixed(1)} NTU`}
+            statusColor="#C084FC"
+            statusBg="rgba(168, 85, 247, 0.15)"
+          />
         </View>
       </ScrollView>
     </View>

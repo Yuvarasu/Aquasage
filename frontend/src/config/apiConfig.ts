@@ -1,22 +1,59 @@
-// Central API Configuration for AquaSage Frontend
-export const SYSTEM_IP = '10.10.32.35';
-export const API_PORT = '8000';
+import { useSettingsStore } from '../store/useSettingsStore';
 
-export const API_BASE_URL = `http://${SYSTEM_IP}:${API_PORT}/api/v1`;
-export const WS_BASE_URL = `ws://${SYSTEM_IP}:${API_PORT}/ws`;
+// Default static fallback constants
+export const DEFAULT_SYSTEM_IP = '10.10.32.35';
+export const DEFAULT_API_PORT = '8000';
 
-export const ENDPOINTS = {
-  HEALTH: `${API_BASE_URL}/health`,
-  SYSTEM_STATUS: `${API_BASE_URL}/system/status`,
-  AUTH_LOGIN: `${API_BASE_URL}/auth/login`,
-  TELEMETRY_LATEST: `${API_BASE_URL}/sensor-data/latest`,
-  TELEMETRY_INGEST: `${API_BASE_URL}/sensor-data`,
-  DIGITAL_TWIN: (tankId: number) => `${API_BASE_URL}/digital-twin/${tankId}`,
-  ALERTS: `${API_BASE_URL}/alerts`,
-  ACKNOWLEDGE_ALERT: (id: string) => `${API_BASE_URL}/alerts/${id}/acknowledge`,
-  DEVICES: `${API_BASE_URL}/devices`,
-  REGISTER_DEVICE: `${API_BASE_URL}/devices/register`,
-  CONSUMPTION_ANALYTICS: `${API_BASE_URL}/analytics/consumption`,
-  WATER_QUALITY_TRENDS: `${API_BASE_URL}/analytics/water-quality-trends`,
-  TANK_TRENDS: (tankId: number) => `${API_BASE_URL}/analytics/tank-trends/${tankId}`,
+export const getApiBaseUrl = (): string => {
+  const { serverHost, serverPort } = useSettingsStore.getState();
+  const host = serverHost || DEFAULT_SYSTEM_IP;
+  const port = serverPort || DEFAULT_API_PORT;
+  return `http://${host}:${port}/api/v1`;
 };
+
+export const getWsBaseUrl = (): string => {
+  const { serverHost, serverPort } = useSettingsStore.getState();
+  const host = serverHost || DEFAULT_SYSTEM_IP;
+  const port = serverPort || DEFAULT_API_PORT;
+  return `ws://${host}:${port}/ws`;
+};
+
+// Central API Configuration for AquaSage Frontend with dynamic resolution
+export const ENDPOINTS = {
+  get HEALTH() { return `${getApiBaseUrl()}/health`; },
+  get SYSTEM_STATUS() { return `${getApiBaseUrl()}/system/status`; },
+  get AUTH_LOGIN() { return `${getApiBaseUrl()}/auth/login`; },
+  get TELEMETRY_LATEST() { return `${getApiBaseUrl()}/sensor-data/latest`; },
+  get TELEMETRY_INGEST() { return `${getApiBaseUrl()}/sensor-data`; },
+  DIGITAL_TWIN: (tankId: number) => `${getApiBaseUrl()}/digital-twin/${tankId}`,
+  get ALERTS() { return `${getApiBaseUrl()}/alerts`; },
+  ACKNOWLEDGE_ALERT: (id: string) => `${getApiBaseUrl()}/alerts/${id}/acknowledge`,
+  get DEVICES() { return `${getApiBaseUrl()}/devices`; },
+  get REGISTER_DEVICE() { return `${getApiBaseUrl()}/devices/register`; },
+  get CONSUMPTION_ANALYTICS() { return `${getApiBaseUrl()}/analytics/consumption`; },
+  get WATER_QUALITY_TRENDS() { return `${getApiBaseUrl()}/analytics/water-quality-trends`; },
+  TANK_TRENDS: (tankId: number) => `${getApiBaseUrl()}/analytics/tank-trends/${tankId}`,
+  AI_INFER: (tankId: number) => `${getApiBaseUrl()}/ai/infer/${tankId}`,
+  AI_PREDICTIONS: (tankId: number) => `${getApiBaseUrl()}/ai/predictions/${tankId}`,
+  AI_DEMAND_FORECAST: (tankId: number) => `${getApiBaseUrl()}/ai/demand-forecast/${tankId}`,
+  AI_INSIGHTS: (tankId: number) => `${getApiBaseUrl()}/ai/insights/${tankId}`,
+};
+
+/** Quick ping utility to verify server reachability */
+export const testServerPing = async (host: string, port: string, timeoutMs: number = 3000): Promise<{ ok: boolean; latencyMs: number; error?: string }> => {
+  const startTime = Date.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(`http://${host}:${port}/api/v1/health`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const latencyMs = Date.now() - startTime;
+    return { ok: response.ok, latencyMs };
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    return { ok: false, latencyMs, error: err?.message || 'Connection timed out' };
+  }
+};
+

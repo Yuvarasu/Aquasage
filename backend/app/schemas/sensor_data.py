@@ -1,66 +1,154 @@
-from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Union
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+
+# ============================================================================
+# Section 11: Nested Hardware Telemetry Models (ESP32 DevKit V1 / Node-RED)
+# ============================================================================
+
+class TankTelemetryData(BaseModel):
+    distance_cm: float = Field(..., ge=0.0, description="Measured distance from sensor to water surface in CM")
+    water_level_percent: float = Field(..., ge=0.0, le=100.0, description="Calculated tank water level percentage")
+
+
+class FlowTelemetryData(BaseModel):
+    flow_1_lpm: float = Field(0.0, ge=0.0, description="Upstream / Inlet Flow sensor 1 in L/min")
+    flow_2_lpm: float = Field(0.0, ge=0.0, description="Downstream / Outlet Flow sensor 2 in L/min")
+    flow_1_total_liters: float = Field(0.0, ge=0.0, description="Accumulated liters through Flow Sensor 1")
+    flow_2_total_liters: float = Field(0.0, ge=0.0, description="Accumulated liters through Flow Sensor 2")
+
+
+class WaterQualityTelemetryData(BaseModel):
+    tds_ppm: float = Field(0.0, ge=0.0, le=5000.0, description="Total Dissolved Solids in PPM")
+    turbidity_raw: int = Field(1000, ge=0, description="Raw ADC Turbidity sensor value")
+
+
+class PumpTelemetryData(BaseModel):
+    status: bool = Field(False, description="Water pump relay status (True = ON, False = OFF)")
+
+
+class DeviceTelemetryData(BaseModel):
+    wifi_rssi: int = Field(-55, description="Wi-Fi Signal strength in dBm")
+    firmware_version: str = Field("0.1.0", description="Controller firmware version")
+
+
+class ESP32TelemetryPayload(BaseModel):
+    """Section 11 Hardware Telemetry Format from ESP32 / Node-RED simulator."""
+    device_id: str = Field(..., description="Unique Hardware Device Identifier (e.g. ESP32_TANK_01)")
+    timestamp: Optional[Union[datetime, str]] = Field(None, description="Telemetry timestamp (ISO-8601 UTC)")
+    tank: TankTelemetryData
+    flow: FlowTelemetryData = Field(default_factory=FlowTelemetryData)
+    water_quality: WaterQualityTelemetryData = Field(default_factory=WaterQualityTelemetryData)
+    pump: PumpTelemetryData = Field(default_factory=PumpTelemetryData)
+    device: DeviceTelemetryData = Field(default_factory=DeviceTelemetryData)
+
+
+# ============================================================================
+# Universal Sensor Ingestion Schema (Accepts nested ESP32 and flat JSON)
+# ============================================================================
 
 class SensorDataIngest(BaseModel):
-    device_id: int = Field(..., description="Registered Device ID")
-    tank_id: int = Field(..., description="Target Storage Tank ID")
+    """Unified Ingestion Schema supporting Section 11 nested payload & flat payloads."""
+    device_id: Union[str, int] = Field(..., description="Device identifier (e.g., 'ESP32_TANK_01' or 1)")
+    tank_id: Optional[int] = Field(None, description="Target storage tank ID (defaults to assigned tank)")
 
-    # HC-SR04 Metrics
-    distance_cm: float = Field(..., ge=0, description="HC-SR04 Ultrasonic Distance Measurement in CM")
-    water_level_pct: float = Field(..., ge=0, le=100, description="Calculated Water Level Percentage")
+    # HC-SR04 Tank Level
+    distance_cm: float = Field(..., ge=0.0, description="Distance in CM")
+    water_level_pct: float = Field(..., ge=0.0, le=100.0, description="Water level percentage")
 
-    # YF-S201 Flow Metrics
-    flow_rate_lmin: float = Field(..., ge=0, description="Water Flow Rate in L/min")
-    daily_consumption_liters: float = Field(0.0, ge=0, description="Daily Total Water Consumption")
-    hourly_consumption_liters: float = Field(0.0, ge=0)
+    # Dual Flow Sensors
+    flow_1_lpm: float = Field(0.0, ge=0.0, description="Inlet Flow Sensor 1 (L/min)")
+    flow_2_lpm: float = Field(0.0, ge=0.0, description="Outlet Flow Sensor 2 (L/min)")
+    flow_1_total_liters: float = Field(0.0, ge=0.0)
+    flow_2_total_liters: float = Field(0.0, ge=0.0)
 
-    # TDS & Quality Sensors
-    tds_ppm: float = Field(..., ge=0, le=5000, description="TDS Sensor value in PPM (Safe < 500)")
-    ph_level: float = Field(7.2, ge=0, le=14)
-    turbidity_ntu: float = Field(0.4, ge=0)
+    # Water Quality
+    tds_ppm: float = Field(0.0, ge=0.0, le=5000.0, description="TDS in PPM")
+    turbidity_raw: int = Field(1000, ge=0, description="Raw ADC turbidity")
 
-    # Hydraulic Pressure
-    pressure_bar: float = Field(3.8, ge=0)
+    # Pump & Device
+    pump_status: bool = Field(False, description="Pump relay state (True=ON, False=OFF)")
+    wifi_rssi: int = Field(-55, description="WiFi RSSI dBm")
+    firmware_version: str = Field("0.1.0")
+    timestamp: Optional[Union[datetime, str]] = None
 
-    @field_validator("water_level_pct")
+    # Backward compatibility aliases
+    flow_rate_lmin: Optional[float] = None
+    daily_consumption_liters: Optional[float] = None
+    hourly_consumption_liters: Optional[float] = None
+    ph_level: Optional[float] = None
+    turbidity_ntu: Optional[float] = None
+    pressure_bar: Optional[float] = None
+
+    @model_validator(mode="before")
     @classmethod
-    def validate_water_level(cls, v: float) -> float:
-        if v < 0 or v > 100:
-            raise ValueError("Water level percentage must be between 0% and 100%")
-        return v
+    def parse_nested_esp32_payload(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
 
-    @field_validator("flow_rate_lmin")
-    @classmethod
-    def validate_flow_rate(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("Flow rate cannot be negative")
-        return v
+        # Check if incoming payload is in Section 11 nested format
+        if "tank" in data and isinstance(data["tank"], dict):
+            tank_data = data["tank"]
+            flow_data = data.get("flow", {}) if isinstance(data.get("flow"), dict) else {}
+            wq_data = data.get("water_quality", {}) if isinstance(data.get("water_quality"), dict) else {}
+            pump_data = data.get("pump", {}) if isinstance(data.get("pump"), dict) else {}
+            dev_data = data.get("device", {}) if isinstance(data.get("device"), dict) else {}
 
-    @field_validator("tds_ppm")
-    @classmethod
-    def validate_tds(cls, v: float) -> float:
-        if v < 0 or v > 5000:
-            raise ValueError("Invalid TDS value. Must be between 0 and 5000 PPM.")
-        return v
+            flat_data: Dict[str, Any] = {
+                "device_id": str(data.get("device_id", "ESP32_TANK_01")),
+                "tank_id": data.get("tank_id"),
+                "distance_cm": tank_data.get("distance_cm", 0.0),
+                "water_level_pct": tank_data.get("water_level_percent", tank_data.get("water_level_pct", 0.0)),
+                "flow_1_lpm": flow_data.get("flow_1_lpm", flow_data.get("flow_rate_lmin", 0.0)),
+                "flow_2_lpm": flow_data.get("flow_2_lpm", 0.0),
+                "flow_1_total_liters": flow_data.get("flow_1_total_liters", 0.0),
+                "flow_2_total_liters": flow_data.get("flow_2_total_liters", 0.0),
+                "tds_ppm": wq_data.get("tds_ppm", 0.0),
+                "turbidity_raw": wq_data.get("turbidity_raw", 1000),
+                "pump_status": bool(pump_data.get("status", False)),
+                "wifi_rssi": dev_data.get("wifi_rssi", -55),
+                "firmware_version": dev_data.get("firmware_version", "0.1.0"),
+                "timestamp": data.get("timestamp"),
+            }
+            return flat_data
 
+        # If flat, harmonize flow_rate_lmin and water_level_percent aliases
+        if "water_level_percent" in data and "water_level_pct" not in data:
+            data["water_level_pct"] = data["water_level_percent"]
+        if "flow_rate_lmin" in data and "flow_1_lpm" not in data:
+            data["flow_1_lpm"] = data["flow_rate_lmin"]
+        if "flow_1_lpm" in data and "flow_rate_lmin" not in data:
+            data["flow_rate_lmin"] = data["flow_1_lpm"]
+
+        return data
+
+
+# ============================================================================
+# Response Schemas
+# ============================================================================
 
 class SensorReadingResponse(BaseModel):
+    """Historical Sensor Reading Response."""
     id: int
-    device_id: int
+    device_id: str
     tank_id: int
     distance_cm: float
     water_level_pct: float
-    flow_rate_lmin: float
-    daily_consumption_liters: float
-    hourly_consumption_liters: float
-    tds_ppm: float
-    ph_level: float
-    turbidity_ntu: float
-    water_quality_status: str
-    pressure_bar: float
+    flow_1_lpm: float
+    flow_2_lpm: float
+    flow_1_total_liters: float
+    flow_2_total_liters: float
+    flow_difference_lpm: float
+    estimated_water_loss_lpm: float
+    possible_leak: bool
     leak_probability: float
+    tds_ppm: float
+    turbidity_raw: int
+    turbidity_status: str
+    water_quality_status: str
+    pump_status: bool
+    wifi_rssi: int
     timestamp: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -69,16 +157,24 @@ class SensorReadingResponse(BaseModel):
 class FrontendTelemetryPayload(BaseModel):
     """Payload directly feeding frontend useTelemetryStore Zustand state."""
     timestamp: str
-    pressure: float
+    pressure: float = 3.8
     flowRate: float
     tankLevel: float
     tankCapacityLiters: float
-    pumpStatus: str
+    pumpStatus: str  # 'running' | 'stopped' | 'fault'
     pumpRPM: int
     dailyConsumptionLiters: float
     hourlyConsumptionLiters: float
     leakProbability: float
-    pumpHealthScore: int
-    valveStatus: str
-    waterTurbidityNTU: float
-    pHLevel: float
+    pumpHealthScore: int = 94
+    valveStatus: str = "OPEN"
+    waterTurbidityNTU: float = 0.4
+    pHLevel: float = 7.2
+    # Additional physical telemetry
+    flow_1_lpm: Optional[float] = None
+    flow_2_lpm: Optional[float] = None
+    water_loss_lpm: Optional[float] = None
+    tds_ppm: Optional[float] = None
+    turbidity_raw: Optional[int] = None
+    turbidity_status: Optional[str] = None
+    water_quality_status: Optional[str] = None

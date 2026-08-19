@@ -1,91 +1,217 @@
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Union
+from app.core.config import settings
 from app.core.exceptions import NotFoundException
+from app.models.device import DeviceNode
 from app.models.sensor_reading import SensorReading
+from app.models.tank import Tank
+from app.models.tank_state import TankState
 from app.repositories.device import DeviceRepository
 from app.repositories.sensor_reading import SensorReadingRepository
 from app.repositories.tank import TankRepository
-from app.schemas.sensor_data import FrontendTelemetryPayload, SensorDataIngest, SensorReadingResponse
+from app.repositories.tank_state import TankStateRepository
+from app.schemas.sensor_data import (
+    FrontendTelemetryPayload,
+    SensorDataIngest,
+    SensorReadingResponse,
+)
 from app.services.alert import AlertService
+from app.services.physics import PhysicsService, physics_service as default_physics_service
 from app.websocket.manager import connection_manager
 
 
 class SensorDataService:
-    """Service layer for IoT Sensor telemetry ingestion and real-time distribution."""
+    """Service layer for IoT Sensor telemetry ingestion, physics computation, and real-time distribution."""
 
     def __init__(
         self,
         sensor_repo: SensorReadingRepository,
         device_repo: DeviceRepository,
         tank_repo: TankRepository,
+        tank_state_repo: TankStateRepository,
         alert_service: AlertService,
+        physics: Optional[PhysicsService] = None,
     ):
         self.sensor_repo = sensor_repo
         self.device_repo = device_repo
         self.tank_repo = tank_repo
+        self.tank_state_repo = tank_state_repo
         self.alert_service = alert_service
+        self.physics = physics or default_physics_service
+
+    async def _resolve_device_and_tank(
+        self, device_id_in: Union[str, int], tank_id_in: Optional[int] = None
+    ) -> tuple[DeviceNode, Tank]:
+        """Resolve or auto-register edge controller device and linked storage tank."""
+        device_id_str = str(device_id_in)
+        device = await self.device_repo.get_by_device_id(device_id_str)
+
+        # Fallback by integer ID if device_id_in is numeric
+        if not device and device_id_str.isdigit():
+            device = await self.device_repo.get(int(device_id_str))
+
+        # Auto-register device if fresh prototype node
+        if not device:
+            device = await self.device_repo.create(
+                {
+                    "device_id": device_id_str,
+                    "device_name": f"Edge Node {device_id_str}",
+                    "device_type": "ESP32_CONTROLLER",
+                    "protocol": "WiFi",
+                    "location": "Benchtop Prototype",
+                    "status": "Online",
+                    "last_seen": datetime.now(timezone.utc),
+                }
+            )
+
+        # Resolve tank
+        target_tank_id = tank_id_in or device.tank_id or 1
+        tank = await self.tank_repo.get(target_tank_id)
+
+        if not tank:
+            # Auto-create default benchtop prototype tank if missing
+            tank = await self.tank_repo.create(
+                {
+                    "name": "Main Storage Tank",
+                    "location": "Benchtop Prototype",
+                    "capacity": settings.DEFAULT_TANK_CAPACITY_LITERS,
+                    "height_cm": settings.DEFAULT_TANK_HEIGHT_CM,
+                    "flow_1_calibration": settings.FLOW_SENSOR_1_CALIBRATION_FACTOR,
+                    "flow_2_calibration": settings.FLOW_SENSOR_2_CALIBRATION_FACTOR,
+                    "status": "Active",
+                }
+            )
+
+        # Link device to tank if unassigned
+        if device.tank_id != tank.id:
+            device.tank_id = tank.id
+            await self.device_repo.update(device, {"tank_id": tank.id})
+
+        return device, tank
 
     async def ingest_sensor_data(self, data_in: SensorDataIngest) -> SensorReading:
-        """Ingest, validate, store sensor data and trigger real-time digital twin & WebSocket events."""
-        # 1. Verify device registration
-        device = await self.device_repo.get(data_in.device_id)
-        if not device:
-            raise NotFoundException(f"Device with ID {data_in.device_id} not registered")
+        """Ingest, calculate engineering physics, persist reading, update singleton state, and broadcast."""
+        # 1. Resolve Device & Tank
+        device, tank = await self._resolve_device_and_tank(data_in.device_id, data_in.tank_id)
 
-        # 2. Verify tank
-        tank = await self.tank_repo.get(data_in.tank_id)
-        if not tank:
-            raise NotFoundException(f"Tank with ID {data_in.tank_id} not found")
-
-        # 3. Classify Water Quality (Safe: TDS < 500 PPM & pH 6.5-8.5)
-        is_safe = data_in.tds_ppm <= 500.0 and 6.5 <= data_in.ph_level <= 8.5
-        quality_status = "Safe" if is_safe else "Unsafe"
-
-        # 4. Calculate Leak Index from pressure & flow discrepancy
-        leak_index = 0.08
-        if data_in.pressure_bar > 5.0 and data_in.flow_rate_lmin > 80.0:
-            leak_index = 0.65
-        elif data_in.pressure_bar < 2.0:
-            leak_index = 0.45
-
-        # 5. Save Sensor Reading
-        reading_dict = data_in.model_dump()
-        reading_dict["water_quality_status"] = quality_status
-        reading_dict["leak_probability"] = leak_index
-        reading_dict["timestamp"] = datetime.now(timezone.utc)
-
-        reading = await self.sensor_repo.create(reading_dict)
-
-        # 6. Update device status and last_seen
-        device.last_seen = datetime.now(timezone.utc)
-        device.status = "Online"
-        await self.device_repo.update(device, {"last_seen": device.last_seen, "status": "Online"})
-
-        # 7. Evaluate automated alert rules
-        await self.alert_service.evaluate_sensor_data(
-            water_level_pct=data_in.water_level_pct,
-            tds_ppm=data_in.tds_ppm,
-            ph_level=data_in.ph_level,
-            leak_probability=leak_index,
-            node_name=device.node_name,
+        # 2. Physics: Dynamic Water Level & Volume
+        level_info = self.physics.calculate_water_level(
+            distance_cm=data_in.distance_cm,
+            tank_height_cm=tank.height_cm,
+            capacity_liters=tank.capacity,
         )
 
-        # 8. Broadcast real-time WebSocket telemetry update matching frontend Zustand store
+        # 3. Physics: Differential Flow & Water Loss
+        flow_info = self.physics.calculate_differential_flow(
+            flow_1_lpm=data_in.flow_1_lpm,
+            flow_2_lpm=data_in.flow_2_lpm,
+        )
+
+        # 4. Physics: Stateful Leak Detection
+        leak_info = self.physics.evaluate_stateful_leak(
+            tank_id=tank.id,
+            flow_1_lpm=data_in.flow_1_lpm,
+            flow_2_lpm=data_in.flow_2_lpm,
+            pump_status=data_in.pump_status,
+        )
+
+        # 5. Physics: Water Quality Classification
+        wq_info = self.physics.classify_water_quality(
+            tds_ppm=data_in.tds_ppm,
+            turbidity_raw=data_in.turbidity_raw,
+        )
+
+        # 6. Overall System Status
+        system_status = self.physics.evaluate_system_status(
+            water_level_pct=level_info["water_level_percent"],
+            possible_leak=leak_info["possible_leak"],
+            water_quality_status=wq_info["water_quality_status"],
+        )
+
+        now_utc = datetime.now(timezone.utc)
+
+        # 7. Persist Historical Time-Series Record in SENSOR_READINGS
+        reading_dict = {
+            "device_id": device.device_id,
+            "tank_id": tank.id,
+            "distance_cm": level_info["distance_cm"],
+            "water_level_pct": level_info["water_level_percent"],
+            "flow_1_lpm": flow_info["flow_1_lpm"],
+            "flow_2_lpm": flow_info["flow_2_lpm"],
+            "flow_1_total_liters": data_in.flow_1_total_liters,
+            "flow_2_total_liters": data_in.flow_2_total_liters,
+            "flow_difference_lpm": flow_info["flow_difference_lpm"],
+            "estimated_water_loss_lpm": flow_info["estimated_water_loss_lpm"],
+            "possible_leak": leak_info["possible_leak"],
+            "leak_probability": leak_info["leak_probability"],
+            "tds_ppm": data_in.tds_ppm,
+            "turbidity_raw": data_in.turbidity_raw,
+            "turbidity_status": wq_info["turbidity_status"],
+            "water_quality_status": wq_info["water_quality_status"],
+            "pump_status": data_in.pump_status,
+            "wifi_rssi": data_in.wifi_rssi,
+            "timestamp": now_utc,
+        }
+        reading = await self.sensor_repo.create(reading_dict)
+
+        # 8. Atomically Upsert Singleton Operational State in TANK_STATE
+        state_dict = {
+            "water_level_percent": level_info["water_level_percent"],
+            "distance_cm": level_info["distance_cm"],
+            "flow_in_lpm": flow_info["flow_1_lpm"],
+            "flow_out_lpm": flow_info["flow_2_lpm"],
+            "water_loss_lpm": flow_info["estimated_water_loss_lpm"],
+            "flow_1_total_liters": data_in.flow_1_total_liters,
+            "flow_2_total_liters": data_in.flow_2_total_liters,
+            "tds_ppm": data_in.tds_ppm,
+            "turbidity_raw": data_in.turbidity_raw,
+            "turbidity_status": wq_info["turbidity_status"],
+            "water_quality_status": wq_info["water_quality_status"],
+            "pump_status": "ON" if data_in.pump_status else "OFF",
+            "system_status": system_status,
+            "leak_probability": leak_info["leak_probability"],
+            "possible_leak": leak_info["possible_leak"],
+            "last_telemetry_at": now_utc,
+        }
+        await self.tank_state_repo.upsert_state(tank.id, state_dict)
+
+        # 9. Update Device status and last_seen
+        await self.device_repo.update(device, {"last_seen": now_utc, "status": "Online", "wifi_rssi": data_in.wifi_rssi})
+
+        # 10. Automated Alert Evaluation
+        await self.alert_service.evaluate_prototype_telemetry(
+            tank_id=tank.id,
+            water_level_pct=level_info["water_level_percent"],
+            flow_difference_lpm=flow_info["flow_difference_lpm"],
+            possible_leak=leak_info["possible_leak"],
+            tds_ppm=data_in.tds_ppm,
+            turbidity_raw=data_in.turbidity_raw,
+            source_node=device.device_id,
+        )
+
+        # 11. Broadcast Real-Time WebSocket Telemetry
         telemetry_payload = FrontendTelemetryPayload(
-            timestamp=datetime.now(timezone.utc).toISOString() if hasattr(datetime.now(timezone.utc), 'toISOString') else datetime.now(timezone.utc).isoformat(),
-            pressure=data_in.pressure_bar,
-            flowRate=data_in.flow_rate_lmin,
-            tankLevel=data_in.water_level_pct,
+            timestamp=now_utc.isoformat(),
+            pressure=3.8,
+            flowRate=flow_info["flow_1_lpm"],
+            tankLevel=level_info["water_level_percent"],
             tankCapacityLiters=tank.capacity,
-            pumpStatus="running" if data_in.flow_rate_lmin > 0 else "stopped",
-            pumpRPM=1450 if data_in.flow_rate_lmin > 0 else 0,
-            dailyConsumptionLiters=data_in.daily_consumption_liters or 18450.0,
+            pumpStatus="running" if data_in.pump_status else "stopped",
+            pumpRPM=1450 if data_in.pump_status else 0,
+            dailyConsumptionLiters=data_in.flow_1_total_liters or 18450.0,
             hourlyConsumptionLiters=data_in.hourly_consumption_liters or 1250.0,
-            leakProbability=leak_index,
+            leakProbability=leak_info["leak_probability"],
             pumpHealthScore=94,
-            valveStatus="OPEN" if data_in.flow_rate_lmin > 0 else "CLOSED",
-            waterTurbidityNTU=data_in.turbidity_ntu,
-            pHLevel=data_in.ph_level,
+            valveStatus="OPEN" if data_in.pump_status else "CLOSED",
+            waterTurbidityNTU=0.4,
+            pHLevel=7.2,
+            flow_1_lpm=flow_info["flow_1_lpm"],
+            flow_2_lpm=flow_info["flow_2_lpm"],
+            water_loss_lpm=flow_info["estimated_water_loss_lpm"],
+            tds_ppm=data_in.tds_ppm,
+            turbidity_raw=data_in.turbidity_raw,
+            turbidity_status=wq_info["turbidity_status"],
+            water_quality_status=wq_info["water_quality_status"],
         )
 
         await connection_manager.broadcast_all(
@@ -101,42 +227,55 @@ class SensorDataService:
         """Fetch latest telemetry payload matching frontend Zustand store."""
         reading = await self.sensor_repo.get_latest()
         if not reading:
-            # Fallback initial telemetry if database is fresh
             return FrontendTelemetryPayload(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 pressure=3.8,
-                flowRate=42.6,
-                tankLevel=72.0,
-                tankCapacityLiters=50000.0,
-                pumpStatus="running",
-                pumpRPM=1450,
-                dailyConsumptionLiters=18450.0,
-                hourlyConsumptionLiters=1250.0,
-                leakProbability=0.08,
-                pumpHealthScore=94,
-                valveStatus="OPEN",
+                flowRate=0.0,
+                tankLevel=80.0,
+                tankCapacityLiters=settings.DEFAULT_TANK_CAPACITY_LITERS,
+                pumpStatus="stopped",
+                pumpRPM=0,
+                dailyConsumptionLiters=0.0,
+                hourlyConsumptionLiters=0.0,
+                leakProbability=0.0,
+                pumpHealthScore=100,
+                valveStatus="CLOSED",
                 waterTurbidityNTU=0.4,
                 pHLevel=7.2,
+                flow_1_lpm=0.0,
+                flow_2_lpm=0.0,
+                water_loss_lpm=0.0,
+                tds_ppm=120.0,
+                turbidity_raw=1000,
+                turbidity_status="Clear",
+                water_quality_status="Good",
             )
 
         tank = await self.tank_repo.get(reading.tank_id)
-        capacity = tank.capacity if tank else 50000.0
+        capacity = tank.capacity if tank else settings.DEFAULT_TANK_CAPACITY_LITERS
 
         return FrontendTelemetryPayload(
             timestamp=reading.timestamp.isoformat(),
-            pressure=reading.pressure_bar,
-            flowRate=reading.flow_rate_lmin,
+            pressure=3.8,
+            flowRate=reading.flow_1_lpm,
             tankLevel=reading.water_level_pct,
             tankCapacityLiters=capacity,
-            pumpStatus="running" if reading.flow_rate_lmin > 0 else "stopped",
-            pumpRPM=1450 if reading.flow_rate_lmin > 0 else 0,
-            dailyConsumptionLiters=reading.daily_consumption_liters,
-            hourlyConsumptionLiters=reading.hourly_consumption_liters,
+            pumpStatus="running" if reading.pump_status else "stopped",
+            pumpRPM=1450 if reading.pump_status else 0,
+            dailyConsumptionLiters=reading.flow_1_total_liters,
+            hourlyConsumptionLiters=0.0,
             leakProbability=reading.leak_probability,
             pumpHealthScore=94,
-            valveStatus="OPEN" if reading.flow_rate_lmin > 0 else "CLOSED",
-            waterTurbidityNTU=reading.turbidity_ntu,
-            pHLevel=reading.ph_level,
+            valveStatus="OPEN" if reading.pump_status else "CLOSED",
+            waterTurbidityNTU=0.4,
+            pHLevel=7.2,
+            flow_1_lpm=reading.flow_1_lpm,
+            flow_2_lpm=reading.flow_2_lpm,
+            water_loss_lpm=reading.estimated_water_loss_lpm,
+            tds_ppm=reading.tds_ppm,
+            turbidity_raw=reading.turbidity_raw,
+            turbidity_status=reading.turbidity_status,
+            water_quality_status=reading.water_quality_status,
         )
 
     async def get_history_by_tank(self, tank_id: int, limit: int = 100) -> List[SensorReadingResponse]:

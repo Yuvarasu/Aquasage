@@ -1,0 +1,112 @@
+[
+  {
+    "id": "tab_aquasage_sim",
+    "type": "tab",
+    "label": "AquaSage Benchtop IoT Simulator",
+    "disabled": false,
+    "info": "Simulates ESP32 DevKit V1 telemetry for AquaSage Smart Water Management Platform."
+  },
+  {
+    "id": "inject_timer",
+    "type": "inject",
+    "z": "tab_aquasage_sim",
+    "name": "Every 2 Seconds",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "2",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 140,
+    "wires": [
+      [
+        "fn_generate_telemetry"
+      ]
+    ]
+  },
+  {
+    "id": "fn_generate_telemetry",
+    "type": "function",
+    "z": "tab_aquasage_sim",
+    "name": "Format Section 11 Telemetry",
+    "func": "// Scenario controls (toggle via global context or defaults)\nconst isLeak = flow.get('isLeak') || false;\nconst isContaminated = flow.get('isContaminated') || false;\n\n// 1. Tank Ultrasonic Metrics (HC-SR04)\nconst distance_cm = isLeak ? 8.5 : (6.0 + Math.random() * 0.2);\nconst water_level_percent = Math.round(((30.0 - distance_cm) / 30.0) * 1000) / 10;\n\n// 2. Dual Flow Sensors (YF-S201)\nconst flow_1_lpm = 10.0 + (Math.random() * 0.4 - 0.2);\nconst flow_2_lpm = isLeak ? (6.8 + (Math.random() * 0.4 - 0.2)) : (flow_1_lpm - 0.1);\n\n// 3. Water Quality (TDS & Turbidity)\nconst tds_ppm = isContaminated ? (720.0 + Math.random() * 30) : (125.0 + Math.random() * 10);\nconst turbidity_raw = isContaminated ? 3400 : 1050;\n\n// Section 11 Unified JSON Schema\nmsg.payload = {\n    \"device_id\": \"ESP32_TANK_01\",\n    \"timestamp\": new Date().toISOString(),\n    \"tank\": {\n        \"distance_cm\": Math.round(distance_cm * 10) / 10,\n        \"water_level_percent\": water_level_percent\n    },\n    \"flow\": {\n        \"flow_1_lpm\": Math.round(flow_1_lpm * 10) / 10,\n        \"flow_2_lpm\": Math.round(flow_2_lpm * 10) / 10,\n        \"flow_1_total_liters\": 145.2,\n        \"flow_2_total_liters\": 140.8\n    },\n    \"water_quality\": {\n        \"tds_ppm\": Math.round(tds_ppm * 10) / 10,\n        \"turbidity_raw\": turbidity_raw\n    },\n    \"pump\": {\n        \"status\": true\n    },\n    \"device\": {\n        \"wifi_rssi\": -52,\n        \"firmware_version\": \"0.1.0\"\n    }\n};\n\nmsg.headers = {\n    \"Content-Type\": \"application/json\"\n};\n\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 390,
+    "y": 140,
+    "wires": [
+      [
+        "http_post_fastapi",
+        "debug_output"
+      ]
+    ]
+  },
+  {
+    "id": "http_post_fastapi",
+    "type": "http request",
+    "z": "tab_aquasage_sim",
+    "name": "POST /api/v1/sensor-data",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "http://localhost:8000/api/v1/sensor-data",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 680,
+    "y": 140,
+    "wires": [
+      [
+        "debug_backend_response"
+      ]
+    ]
+  },
+  {
+    "id": "debug_output",
+    "type": "debug",
+    "z": "tab_aquasage_sim",
+    "name": "Payload Sent",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 640,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "debug_backend_response",
+    "type": "debug",
+    "z": "tab_aquasage_sim",
+    "name": "FastAPI Response",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 930,
+    "y": 140,
+    "wires": []
+  }
+]

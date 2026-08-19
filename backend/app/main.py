@@ -76,7 +76,9 @@ def create_application() -> FastAPI:
     # 3. Global Exception Handlers
     register_exception_handlers(app)
 
-    # 4. Include V1 Router
+    # 4. Include V1 Router & Root WebSocket Router
+    from app.api.v1 import websocket
+    app.include_router(websocket.router)
     app.include_router(api_v1_router, prefix=settings.API_V1_STR)
 
     return app

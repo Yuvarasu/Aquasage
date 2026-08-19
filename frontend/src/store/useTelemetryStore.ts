@@ -1,12 +1,21 @@
 import { create } from 'zustand';
-import { TelemetryData } from '../types/telemetry';
+import { TelemetryData, ConnectionState, StreamSource } from '../types/telemetry';
+import { useSettingsStore } from './useSettingsStore';
 
 interface TelemetryState {
   data: TelemetryData;
-  isConnected: boolean;
+  connectionState: ConnectionState;
+  isConnected: boolean; // Computed helper for backward compatibility
   isSimulating: boolean;
-  updateTelemetry: (newData: Partial<TelemetryData>) => void;
+  streamSource: StreamSource;
+  latencyMs: number;
+  lastPacketTime: string | null;
+  
+  // Actions
+  updateTelemetry: (newData: Partial<TelemetryData>, source?: StreamSource) => void;
+  setConnectionState: (state: ConnectionState) => void;
   setConnectionStatus: (status: boolean) => void;
+  setLatencyMs: (ms: number) => void;
   toggleSimulation: (simulating: boolean) => void;
 }
 
@@ -29,12 +38,43 @@ const initialTelemetry: TelemetryData = {
 
 export const useTelemetryStore = create<TelemetryState>((set) => ({
   data: initialTelemetry,
-  isConnected: true,
-  isSimulating: true,
-  updateTelemetry: (newData) =>
-    set((state) => ({
-      data: { ...state.data, ...newData, timestamp: new Date().toISOString() },
-    })),
-  setConnectionStatus: (isConnected) => set({ isConnected }),
-  toggleSimulation: (isSimulating) => set({ isSimulating }),
-}));
+  connectionState: 'disconnected',
+  isConnected: false,
+  isSimulating: false, // Default to real connection; enable mock only when offline or explicitly enabled
+  streamSource: 'internal_simulator',
+  latencyMs: 0,
+  lastPacketTime: null,
+
+  updateTelemetry: (newData, source = 'live_websocket') =>
+    set((state) => {
+      const { autoSwitchSimulation } = useSettingsStore.getState();
+      const shouldDisableSim = autoSwitchSimulation && source === 'live_websocket' && state.isSimulating;
+      
+      return {
+        data: { ...state.data, ...newData, timestamp: new Date().toISOString() },
+        lastPacketTime: new Date().toISOString(),
+        streamSource: source,
+        isSimulating: shouldDisableSim ? false : state.isSimulating,
+      };
+    }),
+
+  setConnectionState: (connectionState) =>
+    set({
+      connectionState,
+      isConnected: connectionState === 'connected',
+    }),
+
+  setConnectionStatus: (isConnected) =>
+    set({
+      isConnected,
+      connectionState: isConnected ? 'connected' : 'disconnected',
+    }),
+
+  setLatencyMs: (latencyMs) => set({ latencyMs }),
+
+  toggleSimulation: (isSimulating) =>
+    set({
+      isSimulating,
+      streamSource: isSimulating ? 'internal_simulator' : 'live_websocket',
+    }),
+}));

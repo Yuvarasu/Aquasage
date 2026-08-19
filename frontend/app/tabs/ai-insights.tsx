@@ -1,155 +1,266 @@
-import React from 'react';
-import { ScrollView, View, Text, StatusBar, TouchableOpacity } from 'react-native';
-import { useTelemetryStore } from '../../src/store/useTelemetryStore';
-import { 
-  Cpu, 
-  ShieldAlert, 
-  ShieldCheck, 
-  Activity, 
-  Wrench, 
-  Zap, 
+import React, { useEffect, useState } from 'react';
+import {
+  ScrollView,
+  View,
+  Text,
+  StatusBar,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  StyleSheet,
+} from 'react-native';
+import {
+  Cpu,
+  Bot,
+  Sparkles,
   RefreshCw,
-  TrendingUp,
-  AlertTriangle
+  Play,
+  Layers,
+  Zap,
 } from 'lucide-react-native';
+import { useTelemetryStore } from '../../src/store/useTelemetryStore';
+import { ApiService } from '../../src/services/apiService';
+import { GlassCard } from '../../src/components/ui/GlassCard';
+import { StatusBadge } from '../../src/components/ui/StatusBadge';
+import { AcousticLeakVisualizer } from '../../src/components/ai/AcousticLeakVisualizer';
+import { RulDegradationGauge } from '../../src/components/ai/RulDegradationGauge';
+import { DemandForecastChart } from '../../src/components/ai/DemandForecastChart';
+import { AiTechnicianCopilot } from '../../src/components/ai/AiTechnicianCopilot';
 
 export default function AIInsightsScreen() {
   const { data } = useTelemetryStore();
-  const isHighRisk = data.leakProbability > 0.5;
+  const [aiSummary, setAiSummary] = useState<any>(null);
+  const [demandForecast, setDemandForecast] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [copilotVisible, setCopilotVisible] = useState(false);
+  const [inferring, setInferring] = useState(false);
+
+  const loadAiData = async () => {
+    setLoading(true);
+    try {
+      const [summary, forecast] = await Promise.all([
+        ApiService.fetchAiInsightsSummary(1),
+        ApiService.fetchDemandForecast(1),
+      ]);
+      if (summary) setAiSummary(summary);
+      if (forecast) setDemandForecast(forecast);
+    } catch (e) {
+      console.warn('AI loading exception:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAiData();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadAiData();
+  };
+
+  const handleManualInference = async () => {
+    setInferring(true);
+    await ApiService.triggerAiInference(1);
+    await loadAiData();
+    setInferring(false);
+  };
+
+  const isLeakHigh = data.leakProbability > 0.4 || (aiSummary?.anomaly_detected ?? false);
+  const estimatedRul = aiSummary?.pump_estimated_rul_hours ?? 3420;
+  const pumpHealth = aiSummary?.pump_health_score ?? data.pumpHealthScore ?? 94;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#071426' }}>
       <StatusBar barStyle="light-content" backgroundColor="#071426" />
 
       {/* --- HEADER --- */}
-      <View style={{ paddingTop: 48, paddingBottom: 12, paddingHorizontal: 20, backgroundColor: '#071426', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <View style={styles.header}>
         <View>
-          <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 18, letterSpacing: 2 }}>AI INTELLIGENCE</Text>
-          <Text style={{ color: '#94A3B8', fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
-            Neural Network Hydraulic Anomaly Analyzer
-          </Text>
+          <Text style={styles.headerTitle}>AI INTELLIGENCE</Text>
+          <Text style={styles.headerSub}>Neural Network Hydraulic Diagnostics</Text>
         </View>
 
-        <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#10233A', borderWidth: 1, borderColor: '#1E293B', alignItems: 'center', justifyContent: 'center' }}>
-          <Cpu size={18} color="#00C2FF" />
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={() => setCopilotVisible(true)}
+            style={styles.copilotBtn}
+            activeOpacity={0.8}
+          >
+            <Bot size={15} color="#00C2FF" style={{ marginRight: 5 }} />
+            <Text style={styles.copilotBtnText}>AI COPILOT</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onRefresh} style={styles.iconBtn} activeOpacity={0.7}>
+            <RefreshCw size={15} color="#94A3B8" />
+          </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView 
-        contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#00C2FF"
+            colors={['#00C2FF']}
+          />
+        }
       >
-        {/* --- SYSTEM AI STATUS BANNER --- */}
-        <View style={{ backgroundColor: '#10233A', borderWidth: 1, borderColor: isHighRisk ? 'rgba(239, 68, 68, 0.3)' : 'rgba(74, 222, 128, 0.2)', borderRadius: 20, padding: 16, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: isHighRisk ? '#EF4444' : '#4ADE80', marginRight: 12 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Model State: Active Inference</Text>
-              <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
-                {isHighRisk ? 'Anomaly detected across node matrix.' : 'All hydraulic parameters within safe limits.'}
-              </Text>
-            </View>
-          </View>
-          <View style={{ backgroundColor: 'rgba(0, 194, 255, 0.1)', borderWidth: 1, borderColor: 'rgba(0, 194, 255, 0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-            <Text style={{ color: '#00C2FF', fontSize: 9, fontWeight: 'bold' }}>v2.4.1</Text>
-          </View>
-        </View>
-
-        {/* --- SECTION TITLE --- */}
-        <Text style={{ color: '#94A3B8', fontSize: 11, fontWeight: 'bold', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8, paddingHorizontal: 4 }}>
-          Predictive Diagnostics & Prognostics
-        </Text>
-
-        {/* --- CARD 1: LEAK DETECTION MODEL --- */}
-        <View style={{ backgroundColor: '#10233A', borderWidth: 1, borderColor: isHighRisk ? 'rgba(239, 68, 68, 0.3)' : 'rgba(6, 182, 212, 0.2)', borderRadius: 20, padding: 16, marginBottom: 14 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isHighRisk ? 'rgba(239, 68, 68, 0.1)' : 'rgba(6, 182, 212, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                {isHighRisk ? <AlertTriangle size={16} color="#EF4444" /> : <ShieldCheck size={16} color="#00C2FF" />}
+        {/* --- SYSTEM AI INFERENCE STATUS BANNER --- */}
+        <GlassCard variant={isLeakHigh ? 'red' : 'emerald'} style={{ marginBottom: 14 }} padding={14}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+              <View style={[styles.modelIconBox, { backgroundColor: isLeakHigh ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)' }]}>
+                <Cpu size={16} color={isLeakHigh ? '#EF4444' : '#10B981'} />
               </View>
-              <View>
-                <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>Leak Detection Model</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 10, fontFamily: 'monospace' }}>Confidence: 96.4%</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>
+                  Active Neural Inference Engine
+                </Text>
+                <Text style={{ color: '#94A3B8', fontSize: 10, fontFamily: 'monospace', marginTop: 1 }}>
+                  Model Ensemble v2.4 • 200 Hz Sampling Window
+                </Text>
               </View>
             </View>
-            <View style={{ backgroundColor: isHighRisk ? 'rgba(239, 68, 68, 0.2)' : 'rgba(74, 222, 128, 0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: isHighRisk ? 'rgba(239, 68, 68, 0.3)' : 'rgba(74, 222, 128, 0.3)' }}>
-              <Text style={{ color: isHighRisk ? '#EF4444' : '#4ADE80', fontSize: 9, fontWeight: 'bold' }}>
-                {isHighRisk ? 'CRITICAL RISK' : 'SECURE'}
-              </Text>
-            </View>
+
+            <TouchableOpacity
+              onPress={handleManualInference}
+              disabled={inferring}
+              style={styles.runInferBtn}
+              activeOpacity={0.7}
+            >
+              {inferring ? (
+                <ActivityIndicator size="small" color="#00C2FF" />
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Play size={10} color="#00C2FF" style={{ marginRight: 4 }} />
+                  <Text style={styles.runInferText}>RE-INFER</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
+        </GlassCard>
 
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', marginVertical: 4 }}>
-            <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 28, fontFamily: 'monospace' }}>
-              {(data.leakProbability * 100).toFixed(1)}%
-            </Text>
-            <Text style={{ color: isHighRisk ? '#EF4444' : '#00C2FF', fontSize: 12, fontWeight: 'bold', marginLeft: 6 }}>
-              {isHighRisk ? 'ANOMALY DETECTED' : 'RISK INDEX'}
-            </Text>
-          </View>
+        {/* --- COMPONENT 1: ACOUSTIC LEAK LOCALIZATION RADAR --- */}
+        <Text style={styles.sectionHeader}>Acoustic Leak Pinpointing</Text>
+        <AcousticLeakVisualizer
+          leakProbability={data.leakProbability}
+          estimatedDistanceKm={2.4}
+          totalPipelineLengthKm={5.2}
+          flowLossLmin={14.8}
+        />
 
-          <Text style={{ color: '#94A3B8', fontSize: 11, lineHeight: 16, marginTop: 4 }}>
-            {isHighRisk 
-              ? 'CRITICAL: Micro-burst pattern identified between Pressure Sensor 01 and Node B. Immediate inspection recommended.'
-              : 'Normal pressure-flow correlation across distribution lines. No structural leakage signatures found.'}
-          </Text>
-        </View>
+        {/* --- COMPONENT 2: 24-HOUR DEMAND FORECAST --- */}
+        <Text style={styles.sectionHeader}>Predictive Demand Envelope</Text>
+        <DemandForecastChart
+          forecastPoints={demandForecast?.forecast_points}
+          totalProjectedLiters={demandForecast?.total_projected_liters || 21450}
+        />
 
-        {/* --- CARD 2: PUMP MOTOR PROGNOSTICS (RUL) --- */}
-        <View style={{ backgroundColor: '#10233A', borderWidth: 1, borderColor: 'rgba(74, 222, 128, 0.2)', borderRadius: 20, padding: 16, marginBottom: 14 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(74, 222, 128, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                <Wrench size={16} color="#4ADE80" />
-              </View>
-              <View>
-                <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>Pump Motor Prognostics</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 10, fontFamily: 'monospace' }}>Health Score: {data.pumpHealthScore}%</Text>
-              </View>
-            </View>
-            <View style={{ backgroundColor: 'rgba(74, 222, 128, 0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(74, 222, 128, 0.3)' }}>
-              <Text style={{ color: '#4ADE80', fontSize: 9, fontWeight: 'bold' }}>OPTIMAL</Text>
-            </View>
-          </View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', marginVertical: 4 }}>
-            <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 26, fontFamily: 'monospace' }}>3,420 Hours</Text>
-            <Text style={{ color: '#4ADE80', fontSize: 12, fontWeight: 'bold', marginLeft: 6 }}>RUL</Text>
-          </View>
-
-          <Text style={{ color: '#94A3B8', fontSize: 11, lineHeight: 16, marginTop: 4 }}>
-            Vibration spectral harmonics indicate normal bearing wear. Scheduled maintenance estimated in 140 days based on current RPM load ({data.pumpRPM} RPM).
-          </Text>
-        </View>
-
-        {/* --- CARD 3: HYDRAULIC STABILITY & FLOW EFFICIENCY --- */}
-        <View style={{ backgroundColor: '#10233A', borderWidth: 1, borderColor: 'rgba(6, 182, 212, 0.2)', borderRadius: 20, padding: 16, marginBottom: 14 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(6, 182, 212, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                <Activity size={16} color="#00C2FF" />
-              </View>
-              <View>
-                <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>Hydraulic Friction Matrix</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 10, fontFamily: 'monospace' }}>Flow Rate: {data.flowRate.toFixed(1)} L/min</Text>
-              </View>
-            </View>
-            <View style={{ backgroundColor: 'rgba(0, 194, 255, 0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(0, 194, 255, 0.3)' }}>
-              <Text style={{ color: '#00C2FF', fontSize: 9, fontWeight: 'bold' }}>STABLE</Text>
-            </View>
-          </View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', marginVertical: 4 }}>
-            <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 26, fontFamily: 'monospace' }}>98.2%</Text>
-            <Text style={{ color: '#00C2FF', fontSize: 12, fontWeight: 'bold', marginLeft: 6 }}>EFFICIENCY</Text>
-          </View>
-
-          <Text style={{ color: '#94A3B8', fontSize: 11, lineHeight: 16, marginTop: 4 }}>
-            Reynolds number calculations show laminar flow across main transmission headers with minimal boundary layer separation.
-          </Text>
-        </View>
-
+        {/* --- COMPONENT 3: MOTOR PROGNOSTICS & RUL DEGRADATION --- */}
+        <Text style={styles.sectionHeader}>Predictive Motor Overhaul Life</Text>
+        <RulDegradationGauge
+          healthScore={pumpHealth}
+          estimatedRulHours={estimatedRul}
+          rpm={data.pumpRPM}
+        />
       </ScrollView>
+
+      {/* --- AI TECHNICIAN COPILOT MODAL --- */}
+      <AiTechnicianCopilot
+        visible={copilotVisible}
+        onClose={() => setCopilotVisible(false)}
+        onInferenceTriggered={loadAiData}
+      />
     </View>
   );
-}  
+}
+
+const styles = StyleSheet.create({
+  header: {
+    paddingTop: 48,
+    paddingBottom: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#071426',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 18,
+    letterSpacing: 2,
+  },
+  headerSub: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    marginTop: 2,
+  },
+  copilotBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 194, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 194, 255, 0.35)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  copilotBtnText: {
+    color: '#00C2FF',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.6,
+  },
+  iconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#0D1B2E',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modelIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  runInferBtn: {
+    backgroundColor: 'rgba(0, 194, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 194, 255, 0.3)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  runInferText: {
+    color: '#00C2FF',
+    fontSize: 9,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  sectionHeader: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    marginTop: 2,
+    paddingHorizontal: 4,
+  },
+});

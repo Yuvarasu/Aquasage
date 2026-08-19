@@ -1,5 +1,7 @@
 export type PumpStatus = 'running' | 'stopped' | 'fault';
 export type AlarmSeverity = 'critical' | 'warning' | 'info';
+export type ConnectionState = 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
+export type StreamSource = 'live_websocket' | 'rest_polling' | 'internal_simulator';
 
 export interface TelemetryData {
   timestamp: string;

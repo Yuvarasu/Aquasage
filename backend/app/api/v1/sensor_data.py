@@ -19,6 +19,12 @@ router = APIRouter(prefix="/sensor-data", tags=["IoT Sensor Data Ingestion"])
     response_model=StandardResponse[SensorReadingResponse],
     status_code=status.HTTP_201_CREATED,
 )
+@router.post(
+    "/",
+    response_model=StandardResponse[SensorReadingResponse],
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 async def ingest_sensor_data(
     data_in: SensorDataIngest,
     sensor_service: SensorDataService = Depends(get_sensor_data_service),

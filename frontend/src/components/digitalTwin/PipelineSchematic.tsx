@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text as RNText, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text as RNText, StyleSheet, TouchableOpacity } from 'react-native';
 import Svg, { Path, Rect, Circle, G, Defs, LinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import Animated, {
   useSharedValue,
@@ -10,61 +10,57 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { useTelemetryStore } from '../../store/useTelemetryStore';
+import { AnimatedPumpNode } from './AnimatedPumpNode';
+import { FluidTankNode } from './FluidTankNode';
+import { SensorGlowNode } from './SensorGlowNode';
+import { NodeDetailModal, NodeType } from './NodeDetailModal';
+import { hapticsService } from '../../services/hapticsService';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
-const AnimatedG = Animated.createAnimatedComponent(G);
 
 export const PipelineSchematic: React.FC = () => {
   const { data } = useTelemetryStore();
-  const { pressure, flowRate, tankLevel, pumpStatus } = data;
+  const { pressure, flowRate, tankLevel, pumpStatus, pumpRPM, leakProbability } = data;
+
+  const [selectedNode, setSelectedNode] = useState<NodeType | null>(null);
 
   // Animation Controls
   const dashOffset = useSharedValue(0);
-  const rotation = useSharedValue(0);
   const dotOpacity = useSharedValue(1);
+  const leakPulse = useSharedValue(1);
 
-  // Dynamic animation speed calculated from flow rate with infinite loop guaranteed (-1)
+  // Dynamic animation speed calculated from flow rate
   useEffect(() => {
-    const duration = flowRate > 0 ? Math.max(400, 3000 - flowRate * 25) : 2000;
-    
-    dashOffset.value = 0;
-    dashOffset.value = withRepeat(
-      withTiming(-40, { duration, easing: Easing.linear }),
-      -1,
-      false
-    );
-  }, [flowRate]);
-
-  // Pump rotational velocity linked to operation state with infinite loop guaranteed (-1)
-  useEffect(() => {
-    if (pumpStatus === 'running') {
-      rotation.value = withRepeat(
-        withTiming(360, { duration: 1200, easing: Easing.linear }),
+    if (flowRate > 0) {
+      const duration = Math.max(300, 2600 - flowRate * 22);
+      dashOffset.value = 0;
+      dashOffset.value = withRepeat(
+        withTiming(-40, { duration, easing: Easing.linear }),
         -1,
         false
       );
     } else {
-      rotation.value = 0;
+      dashOffset.value = 0;
     }
-  }, [pumpStatus]);
+  }, [flowRate]);
 
-  // Pulse animation for the status dot
+  // Pulse animation for status indicator
   useEffect(() => {
-    dotOpacity.value = withRepeat(
-      withTiming(0.3, { duration: 1000 }),
-      -1,
-      true
-    );
+    dotOpacity.value = withRepeat(withTiming(0.3, { duration: 1000 }), -1, true);
   }, []);
+
+  // Anomaly leak pulse
+  const isLeakHigh = leakProbability > 0.4;
+  useEffect(() => {
+    if (isLeakHigh) {
+      leakPulse.value = withRepeat(withTiming(1.8, { duration: 600 }), -1, true);
+    } else {
+      leakPulse.value = 1;
+    }
+  }, [isLeakHigh]);
 
   const animatedFlowProps = useAnimatedProps(() => ({
     strokeDashoffset: dashOffset.value,
-  }));
-
-  const animatedPumpProps = useAnimatedProps(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
   const dotAnimatedStyle = useAnimatedStyle(() => ({
@@ -73,165 +69,242 @@ export const PipelineSchematic: React.FC = () => {
 
   // Dynamic status color coding
   const getPressureColor = () => {
-    if (pressure > 5.5) return '#EF4444'; // Extreme Red
-    if (pressure > 4.2) return '#FACC15'; // Medium Warning
-    return '#4ADE80';                   // Safe Green
+    if (pressure > 5.5) return '#EF4444'; // Red
+    if (pressure > 4.2) return '#F59E0B'; // Amber
+    return '#00C2FF';                   // Cyan
   };
-
-  const getPumpColor = () => {
-    if (pumpStatus === 'running') return '#4ADE80';
-    if (pumpStatus === 'fault') return '#EF4444';
-    return '#64748B';
-  };
-
-  // Water level SVG path calculation
-  const tankHeight = 70;
-  const fillHeight = (tankLevel / 100) * tankHeight;
-  const tankY = 120 - fillHeight;
 
   return (
     <View style={styles.container}>
+      {/* Header bar */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Animated.View style={[styles.statusDot, dotAnimatedStyle]} />
           <RNText style={styles.headerTitle}>SCADA Hydraulic Digital Twin</RNText>
         </View>
-        <RNText style={styles.flowText}>FLOW: {flowRate.toFixed(1)} L/min</RNText>
+        <View style={styles.headerRight}>
+          <RNText style={styles.tapTip}>TAP NODE TO INSPECT</RNText>
+        </View>
       </View>
 
-      <Svg viewBox="0 0 380 220" style={styles.svg}>
-        <Defs>
-          <LinearGradient id="waterGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor="#06B6D4" />
-            <Stop offset="100%" stopColor="#3B82F6" />
-          </LinearGradient>
-          <LinearGradient id="tankWater" x1="0%" y1="0%" x2="0%" y2="100%">
-            <Stop offset="0%" stopColor="#38BDF8" stopOpacity="0.9" />
-            <Stop offset="100%" stopColor="#1E3A8A" stopOpacity="0.95" />
-          </LinearGradient>
-        </Defs>
+      {/* SVG Canvas */}
+      <View style={{ position: 'relative' }}>
+        <Svg viewBox="0 0 380 210" style={styles.svg}>
+          <Defs>
+            <LinearGradient id="waterFlowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <Stop offset="0%" stopColor="#06B6D4" />
+              <Stop offset="50%" stopColor="#3B82F6" />
+              <Stop offset="100%" stopColor="#00C2FF" />
+            </LinearGradient>
+          </Defs>
 
-        {/* --- PIPELINE PATHS (STATIC BASE) --- */}
-        <Path
-          d="M 30 110 L 80 110 M 110 110 L 170 110 L 170 60 L 250 60 L 250 110 L 280 110 M 320 120 L 360 120"
-          stroke="#10233A"
-          strokeWidth="12"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          {/* --- BASE PIPELINE (Dark Steel) --- */}
+          <Path
+            d="M 28 110 L 80 110 M 110 110 L 165 110 L 165 60 L 235 60 L 235 110 L 275 110 M 325 115 L 355 115"
+            stroke="#10233A"
+            strokeWidth="11"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {/* --- ANIMATED FLOW LAYER --- */}
+          {flowRate > 0 && (
+            <AnimatedPath
+              d="M 28 110 L 80 110 M 110 110 L 165 110 L 165 60 L 235 60 L 235 110 L 275 110 M 325 115 L 355 115"
+              stroke="url(#waterFlowGrad)"
+              strokeWidth="5"
+              strokeDasharray={[8, 5]}
+              animatedProps={animatedFlowProps}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+
+          {/* --- NODE 1: SOURCE RESERVOIR --- */}
+          <G transform={[{ translateX: 14 }, { translateY: 78 }]}>
+            <Rect width="26" height="58" rx="5" fill="#0D1B2E" stroke="#334155" strokeWidth="2" />
+            <Rect x="3" y="15" width="20" height="40" rx="3" fill="rgba(6, 182, 212, 0.4)" />
+            <SvgText x="13" y="68" fill="#94A3B8" fontSize="7.5" fontWeight="bold" textAnchor="middle">
+              SOURCE
+            </SvgText>
+          </G>
+
+          {/* --- NODE 2: PUMP STATION --- */}
+          <AnimatedPumpNode
+            x={95}
+            y={110}
+            status={pumpStatus}
+            rpm={pumpRPM}
+          />
+
+          {/* --- NODE 3: PRESSURE SENSOR (PT-01) --- */}
+          <SensorGlowNode
+            x={165}
+            y={58}
+            tag="PT-01"
+            valueText={`${pressure.toFixed(1)}`}
+            unitText="BAR"
+            color={getPressureColor()}
+            isAlert={pressure > 5.0}
+          />
+
+          {/* --- NODE 4: FLOW SENSOR (FT-01) --- */}
+          <SensorGlowNode
+            x={235}
+            y={58}
+            tag="FT-01"
+            valueText={`${flowRate.toFixed(0)}`}
+            unitText="L/min"
+            color="#38BDF8"
+          />
+
+          {/* --- NODE 5: ELEVATED VILLAGE TANK --- */}
+          <FluidTankNode
+            x={275}
+            y={42}
+            width={46}
+            height={72}
+            levelPercent={tankLevel}
+            capacityLiters={50000}
+          />
+
+          {/* --- NODE 6: TOWN DISTRIBUTION GRID --- */}
+          <G transform={[{ translateX: 355 }, { translateY: 115 }]}>
+            <Circle r="12" fill="#0D1B2E" stroke="#10B981" strokeWidth="2" />
+            <Circle r="5" fill="#10B981" />
+            <SvgText x="0" y="24" fill="#94A3B8" fontSize="7.5" fontWeight="bold" textAnchor="middle">
+              TOWN
+            </SvgText>
+            <SvgText x="0" y="32" fill="#10B981" fontSize="6.5" fontFamily="monospace" textAnchor="middle">
+              142 CONN
+            </SvgText>
+          </G>
+        </Svg>
+
+        {/* --- INVISIBLE TOUCH HIT ZONES FOR DIRECT TAP INSPECTION --- */}
+        <TouchableOpacity
+          style={[styles.touchZone, { left: 8, top: 60, width: 44, height: 90 }]}
+          onPress={() => {
+            hapticsService.tapLight();
+            setSelectedNode('SOURCE_RESERVOIR');
+          }}
+          activeOpacity={0.6}
         />
-
-        {/* --- ANIMATED WATER FLOW LAYER --- */}
-        <AnimatedPath
-          d="M 30 110 L 80 110 M 110 110 L 170 110 L 170 60 L 250 60 L 250 110 L 280 110 M 320 120 L 360 120"
-          stroke="url(#waterGrad)"
-          strokeWidth="6"
-          strokeDasharray={[10, 6]}
-          animatedProps={animatedFlowProps}
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <TouchableOpacity
+          style={[styles.touchZone, { left: 70, top: 70, width: 55, height: 90 }]}
+          onPress={() => {
+            hapticsService.tapLight();
+            setSelectedNode('PUMP_01');
+          }}
+          activeOpacity={0.6}
         />
-
-        {/* --- NODE 1: WATER RESERVOIR --- */}
-        <Rect x="10" y="80" width="30" height="60" rx="6" fill="#10233A" stroke="#1E293B" strokeWidth="2" />
-        <SvgText x="15" y="152" fill="#94A3B8" fontSize="8" fontWeight="bold">SOURCE</SvgText>
-
-        {/* --- NODE 2: PUMP STATION WITH ROTATING TURBINE --- */}
-        <G transform={[{ translateX: 95 }, { translateY: 110 }]}>
-          <Circle r="18" fill="#10233A" stroke={getPumpColor()} strokeWidth="3" />
-          {/* Animated Internal Turbine Impeller */}
-          <AnimatedG animatedProps={animatedPumpProps}>
-            <Circle r="4" fill="#00C2FF" />
-            <Path d="M -12 0 L 12 0 M 0 -12 L 0 12" stroke="#00C2FF" strokeWidth="2" />
-          </AnimatedG>
-        </G>
-        <SvgText x="82" y="142" fill="#94A3B8" fontSize="9" fontWeight="bold">PUMP 01</SvgText>
-
-        {/* --- NODE 3: PRESSURE SENSOR --- */}
-        <G transform={[{ translateX: 170 }, { translateY: 60 }]}>
-          <Circle r="10" fill="#10233A" stroke={getPressureColor()} strokeWidth="3" />
-          <Circle r="4" fill={getPressureColor()} />
-        </G>
-        <SvgText x="145" y="42" fill="#94A3B8" fontSize="8" fontWeight="bold">
-          {pressure.toFixed(1)} BAR
-        </SvgText>
-
-        {/* --- NODE 4: FLOW SENSOR --- */}
-        <G transform={[{ translateX: 250 }, { translateY: 60 }]}>
-          <Rect x="-10" y="-10" width="20" height="20" rx="4" fill="#10233A" stroke="#00C2FF" strokeWidth="2" />
-          <SvgText x="-6" y="4" fill="#00C2FF" fontSize="8" fontWeight="bold">FT</SvgText>
-        </G>
-
-        {/* --- NODE 5: ELEVATED VILLAGE STORAGE TANK --- */}
-        <Rect x="280" y="50" width="40" height="70" rx="4" fill="#10233A" stroke="#1E293B" strokeWidth="2" />
-        <Rect
-          x="282"
-          y={tankY}
-          width="36"
-          height={fillHeight}
-          rx="2"
-          fill="url(#tankWater)"
+        <TouchableOpacity
+          style={[styles.touchZone, { left: 140, top: 15, width: 52, height: 85 }]}
+          onPress={() => {
+            hapticsService.tapLight();
+            setSelectedNode('PRESSURE_SEN_01');
+          }}
+          activeOpacity={0.6}
         />
-        <SvgText x="285" y="135" fill="#38BDF8" fontSize="9" fontWeight="bold">
-          {tankLevel.toFixed(0)}%
-        </SvgText>
+        <TouchableOpacity
+          style={[styles.touchZone, { left: 210, top: 15, width: 52, height: 85 }]}
+          onPress={() => {
+            hapticsService.tapLight();
+            setSelectedNode('FLOW_SEN_01');
+          }}
+          activeOpacity={0.6}
+        />
+        <TouchableOpacity
+          style={[styles.touchZone, { left: 270, top: 30, width: 56, height: 110 }]}
+          onPress={() => {
+            hapticsService.tapLight();
+            setSelectedNode('VILLAGE_TANK');
+          }}
+          activeOpacity={0.6}
+        />
+        <TouchableOpacity
+          style={[styles.touchZone, { left: 335, top: 80, width: 42, height: 80 }]}
+          onPress={() => {
+            hapticsService.tapLight();
+            setSelectedNode('TOWN_GRID');
+          }}
+          activeOpacity={0.6}
+        />
+      </View>
 
-        {/* --- NODE 6: CONSUMER DISTRIBUTION NETWORK --- */}
-        <Circle cx="360" cy="120" r="8" fill="#10233A" stroke="#00C2FF" strokeWidth="2" />
-        <SvgText x="340" y="140" fill="#94A3B8" fontSize="8" fontWeight="bold">TOWN</SvgText>
-      </Svg>
+      {/* --- NODE DETAIL MODAL --- */}
+      <NodeDetailModal
+        visible={!!selectedNode}
+        nodeType={selectedNode}
+        telemetry={data}
+        onClose={() => setSelectedNode(null)}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#10233A',      // Upgraded to match industrial card containers
+    backgroundColor: '#0D1B2E',
     borderWidth: 1,
-    borderColor: 'rgba(6, 182, 212, 0.2)', // Subtle cyan border glow
+    borderColor: 'rgba(6, 182, 212, 0.25)',
     borderRadius: 20,
-    padding: 16,
-    marginVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 25,
-    elevation: 5,
-    position: 'relative',
+    padding: 14,
+    marginVertical: 6,
+    shadowColor: '#00C2FF',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 18,
+    elevation: 6,
     overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     paddingHorizontal: 4,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#00C2FF',      // Matching industrial cyan
-    marginRight: 8,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#00C2FF',
+    marginRight: 6,
   },
   headerTitle: {
-    color: '#FFFFFF',                // Clean white header
+    color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 12,
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  flowText: {
-    color: '#38BDF8',                // Bright blue badge
-    fontSize: 11,
+  tapTip: {
+    color: '#00C2FF',
+    fontSize: 9,
     fontFamily: 'monospace',
     fontWeight: 'bold',
+    backgroundColor: 'rgba(6, 182, 212, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(6, 182, 212, 0.25)',
   },
   svg: {
     width: '100%',
-    height: 220,
+    height: 210,
+  },
+  touchZone: {
+    position: 'absolute',
+    backgroundColor: 'transparent',
   },
 });

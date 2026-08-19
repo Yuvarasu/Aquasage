@@ -1,31 +1,80 @@
-import Slider from "@react-native-community/slider";
-import {
-  Activity,
-  Gauge,
-  Power,
-  Radio,
-  Sliders
-} from "lucide-react-native";
-import React from "react";
+import React, { useState } from 'react';
 import {
   ScrollView,
   StatusBar,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
-import { useTelemetryStore } from "../../src/store/useTelemetryStore";
-import { ApiService } from "../../src/services/apiService";
+  ActivityIndicator,
+} from 'react-native';
+import Slider from '@react-native-community/slider';
+import {
+  Activity,
+  Gauge,
+  Power,
+  Radio,
+  Sliders,
+  Server,
+  CheckCircle2,
+  AlertCircle,
+  RotateCcw,
+} from 'lucide-react-native';
+import { useTelemetryStore } from '../../src/store/useTelemetryStore';
+import { useSettingsStore } from '../../src/store/useSettingsStore';
+import { ApiService } from '../../src/services/apiService';
+import { socketService } from '../../src/services/socketService';
+import { testServerPing } from '../../src/config/apiConfig';
+import { GlassCard } from '../../src/components/ui/GlassCard';
+import { StatusBadge } from '../../src/components/ui/StatusBadge';
 
 export default function SettingsScreen() {
-  const { data, updateTelemetry, isSimulating, toggleSimulation } =
-    useTelemetryStore();
-  const isFault = data.pumpStatus === "fault";
-  const isRunning = data.pumpStatus === "running";
+  const { data, updateTelemetry, isSimulating, toggleSimulation } = useTelemetryStore();
+  const {
+    serverHost,
+    serverPort,
+    autoSwitchSimulation,
+    setServerHost,
+    setServerPort,
+    setAutoSwitchSimulation,
+    resetToDefaults,
+  } = useSettingsStore();
+
+  const [hostInput, setHostInput] = useState(serverHost);
+  const [portInput, setPortInput] = useState(serverPort);
+  const [pingStatus, setPingStatus] = useState<{ testing: boolean; success?: boolean; latencyMs?: number; error?: string } | null>(null);
+
+  const isFault = data.pumpStatus === 'fault';
+  const isRunning = data.pumpStatus === 'running';
+
+  const handleSaveConnection = () => {
+    setServerHost(hostInput);
+    setServerPort(portInput);
+    socketService.reconnect();
+  };
+
+  const handleTestPing = async () => {
+    setPingStatus({ testing: true });
+    const result = await testServerPing(hostInput, portInput);
+    setPingStatus({
+      testing: false,
+      success: result.ok,
+      latencyMs: result.latencyMs,
+      error: result.error,
+    });
+  };
+
+  const handleResetSettings = () => {
+    resetToDefaults();
+    setHostInput('10.10.32.35');
+    setPortInput('8000');
+    setPingStatus(null);
+    socketService.reconnect();
+  };
 
   const handlePressureChange = (val: number) => {
-    updateTelemetry({ pressure: val });
+    updateTelemetry({ pressure: val }, 'internal_simulator');
     ApiService.ingestSensorReading({
       device_id: 1,
       tank_id: 1,
@@ -39,7 +88,7 @@ export default function SettingsScreen() {
   };
 
   const handleFlowChange = (val: number) => {
-    updateTelemetry({ flowRate: val });
+    updateTelemetry({ flowRate: val }, 'internal_simulator');
     ApiService.ingestSensorReading({
       device_id: 1,
       tank_id: 1,
@@ -53,7 +102,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#071426" }}>
+    <View style={{ flex: 1, backgroundColor: '#071426' }}>
       <StatusBar barStyle="light-content" backgroundColor="#071426" />
 
       {/* --- HEADER --- */}
@@ -62,32 +111,18 @@ export default function SettingsScreen() {
           paddingTop: 48,
           paddingBottom: 12,
           paddingHorizontal: 20,
-          backgroundColor: "#071426",
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
+          backgroundColor: '#071426',
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
         <View>
-          <Text
-            style={{
-              color: "#FFFFFF",
-              fontWeight: "900",
-              fontSize: 18,
-              letterSpacing: 2,
-            }}
-          >
+          <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 18, letterSpacing: 2 }}>
             SCADA HARDWARE
           </Text>
-          <Text
-            style={{
-              color: "#94A3B8",
-              fontSize: 11,
-              fontFamily: "monospace",
-              marginTop: 2,
-            }}
-          >
-            Realtime Simulator & Network Configs
+          <Text style={{ color: '#94A3B8', fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
+            Network Gateway & Actuator Overrides
           </Text>
         </View>
 
@@ -96,133 +131,162 @@ export default function SettingsScreen() {
             width: 36,
             height: 36,
             borderRadius: 12,
-            backgroundColor: "#10233A",
+            backgroundColor: '#0D1B2E',
             borderWidth: 1,
-            borderColor: "#1E293B",
-            alignItems: "center",
-            justifyContent: "center",
+            borderColor: '#1E293B',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
           <Sliders size={18} color="#00C2FF" />
         </View>
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* --- SIMULATOR TOGGLE CARD --- */}
-        <View
-          style={{
-            backgroundColor: "#10233A",
-            borderWidth: 1,
-            borderColor: "rgba(6, 182, 212, 0.2)",
-            borderRadius: 20,
-            padding: 16,
-            marginBottom: 16,
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              flex: 1,
-              marginRight: 12,
-            }}
-          >
-            <View
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 10,
-                backgroundColor: "rgba(6, 182, 212, 0.1)",
-                alignItems: "center",
-                justifyContent: "center",
-                marginRight: 12,
-              }}
-            >
-              <Radio size={16} color="#00C2FF" />
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+        {/* --- SECTION 1: SERVER & GATEWAY CONNECTION --- */}
+        <Text style={styles.sectionHeader}>Server & Gateway Connection</Text>
+
+        <GlassCard variant="cyan" style={{ marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <Server size={18} color="#00C2FF" style={{ marginRight: 8 }} />
+            <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>Backend Host Configuration</Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+            <View style={{ flex: 2, marginRight: 8 }}>
+              <Text style={styles.inputLabel}>SERVER HOST / IP</Text>
+              <TextInput
+                value={hostInput}
+                onChangeText={setHostInput}
+                placeholder="10.10.32.35 or localhost"
+                placeholderTextColor="#475569"
+                style={styles.textInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
             </View>
+
             <View style={{ flex: 1 }}>
-              <Text
-                style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 13 }}
-              >
-                Internal Telemetry Simulator
-              </Text>
-              <Text style={{ color: "#94A3B8", fontSize: 11, marginTop: 2 }}>
-                {isSimulating
-                  ? "Autonomous packet stream active"
-                  : "Manual override mode engaged"}
-              </Text>
+              <Text style={styles.inputLabel}>PORT</Text>
+              <TextInput
+                value={portInput}
+                onChangeText={setPortInput}
+                placeholder="8000"
+                placeholderTextColor="#475569"
+                keyboardType="numeric"
+                style={styles.textInput}
+              />
             </View>
           </View>
-          <Switch
-            value={isSimulating}
-            onValueChange={toggleSimulation}
-            trackColor={{ false: "#1E293B", true: "#06B6D4" }}
-            thumbColor={"#FFFFFF"}
-          />
-        </View>
 
-        {/* --- SECTION LABEL --- */}
-        <Text
-          style={{
-            color: "#94A3B8",
-            fontSize: 11,
-            fontWeight: "bold",
-            letterSpacing: 1.5,
-            textTransform: "uppercase",
-            marginBottom: 8,
-            paddingHorizontal: 4,
-          }}
-        >
-          Live Telemetry Overrides
-        </Text>
-
-        {/* --- SLIDER 1: PRESSURE OVERRIDE --- */}
-        <View
-          style={{
-            backgroundColor: "#10233A",
-            borderWidth: 1,
-            borderColor: "rgba(6, 182, 212, 0.2)",
-            borderRadius: 20,
-            padding: 16,
-            marginBottom: 14,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Gauge size={16} color="#00C2FF" style={{ marginRight: 8 }} />
-              <Text
-                style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 13 }}
-              >
-                Pressure Override
-              </Text>
-            </View>
-            <Text
-              style={{
-                color: "#00C2FF",
-                fontSize: 14,
-                fontWeight: "900",
-                fontFamily: "monospace",
-              }}
+          {/* Action Buttons: Ping & Save */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+            <TouchableOpacity
+              onPress={handleTestPing}
+              style={[styles.actionBtn, { backgroundColor: '#1E293B', borderColor: '#334155' }]}
+              disabled={pingStatus?.testing}
             >
+              {pingStatus?.testing ? (
+                <ActivityIndicator size="small" color="#00C2FF" />
+              ) : (
+                <Text style={[styles.actionBtnText, { color: '#00C2FF' }]}>TEST PING</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleSaveConnection}
+              style={[styles.actionBtn, { backgroundColor: '#0284C7', borderColor: '#38BDF8' }]}
+            >
+              <Text style={[styles.actionBtnText, { color: '#FFFFFF' }]}>APPLY & RECONNECT</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Ping Diagnostic Output */}
+          {pingStatus && !pingStatus.testing && (
+            <View
+              style={[
+                styles.pingResultBox,
+                {
+                  backgroundColor: pingStatus.success ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                  borderColor: pingStatus.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+                },
+              ]}
+            >
+              {pingStatus.success ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <CheckCircle2 size={14} color="#10B981" style={{ marginRight: 6 }} />
+                  <Text style={{ color: '#34D399', fontSize: 11, fontWeight: 'bold' }}>
+                    Connected successfully in {pingStatus.latencyMs}ms
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <AlertCircle size={14} color="#EF4444" style={{ marginRight: 6 }} />
+                  <Text style={{ color: '#F87171', fontSize: 11, fontWeight: 'bold' }}>
+                    Connection unreachable: {pingStatus.error}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Auto-Switch Toggle */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#1E293B' }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={{ color: '#E2E8F0', fontWeight: 'bold', fontSize: 12 }}>Auto-prioritize Live Telemetry</Text>
+              <Text style={{ color: '#64748B', fontSize: 10, marginTop: 2 }}>Auto-disable simulation when live WebSocket data is streaming</Text>
+            </View>
+            <Switch
+              value={autoSwitchSimulation}
+              onValueChange={setAutoSwitchSimulation}
+              trackColor={{ false: '#1E293B', true: '#0284C7' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        </GlassCard>
+
+        {/* --- SECTION 2: SIMULATION CONTROLS --- */}
+        <Text style={styles.sectionHeader}>Telemetry Simulation</Text>
+
+        <GlassCard variant="slate" style={{ marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 }}>
+              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(6, 182, 212, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                <Radio size={16} color="#00C2FF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Autonomous Generator</Text>
+                <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
+                  {isSimulating ? 'Autonomous telemetry generation active' : 'Simulation paused'}
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={isSimulating}
+              onValueChange={toggleSimulation}
+              trackColor={{ false: '#1E293B', true: '#06B6D4' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        </GlassCard>
+
+        {/* --- SECTION 3: SENSOR VALUE OVERRIDES --- */}
+        <Text style={styles.sectionHeader}>Sensor Calibration & Overrides</Text>
+
+        {/* Pressure Slider */}
+        <GlassCard variant="cyan" style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Gauge size={16} color="#00C2FF" style={{ marginRight: 8 }} />
+              <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Pressure Transducer</Text>
+            </View>
+            <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '900', fontFamily: 'monospace' }}>
               {data.pressure.toFixed(1)} BAR
             </Text>
           </View>
 
           <Slider
-            style={{ width: "100%", height: 40 }}
+            style={{ width: '100%', height: 40 }}
             minimumValue={0}
             maximumValue={8}
             value={data.pressure}
@@ -231,262 +295,153 @@ export default function SettingsScreen() {
             maximumTrackTintColor="#1E293B"
             thumbTintColor="#00C2FF"
           />
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              paddingHorizontal: 4,
-            }}
-          >
-            <Text
-              style={{
-                color: "#64748B",
-                fontSize: 10,
-                fontFamily: "monospace",
-              }}
-            >
-              0.0 BAR
-            </Text>
-            <Text
-              style={{
-                color: "#64748B",
-                fontSize: 10,
-                fontFamily: "monospace",
-              }}
-            >
-              8.0 BAR (MAX)
-            </Text>
-          </View>
-        </View>
+        </GlassCard>
 
-        {/* --- SLIDER 2: FLOW RATE OVERRIDE --- */}
-        <View
-          style={{
-            backgroundColor: "#10233A",
-            borderWidth: 1,
-            borderColor: "rgba(59, 130, 246, 0.2)",
-            borderRadius: 20,
-            padding: 16,
-            marginBottom: 14,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
+        {/* Flow Slider */}
+        <GlassCard variant="cyan" style={{ marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Activity size={16} color="#38BDF8" style={{ marginRight: 8 }} />
-              <Text
-                style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 13 }}
-              >
-                Flow Rate Override
-              </Text>
+              <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Discharge Flow Rate</Text>
             </View>
-            <Text
-              style={{
-                color: "#38BDF8",
-                fontSize: 14,
-                fontWeight: "900",
-                fontFamily: "monospace",
-              }}
-            >
+            <Text style={{ color: '#38BDF8', fontSize: 14, fontWeight: '900', fontFamily: 'monospace' }}>
               {data.flowRate.toFixed(1)} L/min
             </Text>
           </View>
 
           <Slider
-            style={{ width: "100%", height: 40 }}
+            style={{ width: '100%', height: 40 }}
             minimumValue={0}
             maximumValue={120}
             value={data.flowRate}
             onValueChange={handleFlowChange}
-            minimumTrackTintColor="#3B82F6"
+            minimumTrackTintColor="#38BDF8"
             maximumTrackTintColor="#1E293B"
             thumbTintColor="#38BDF8"
           />
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              paddingHorizontal: 4,
-            }}
-          >
-            <Text
-              style={{
-                color: "#64748B",
-                fontSize: 10,
-                fontFamily: "monospace",
-              }}
-            >
-              0 L/min
-            </Text>
-            <Text
-              style={{
-                color: "#64748B",
-                fontSize: 10,
-                fontFamily: "monospace",
-              }}
-            >
-              120 L/min (MAX)
-            </Text>
-          </View>
-        </View>
+        </GlassCard>
 
-        {/* --- SECTION LABEL --- */}
-        <Text
-          style={{
-            color: "#94A3B8",
-            fontSize: 11,
-            fontWeight: "bold",
-            letterSpacing: 1.5,
-            textTransform: "uppercase",
-            marginBottom: 8,
-            marginTop: 4,
-            paddingHorizontal: 4,
-          }}
-        >
-          Actuator State Control
-        </Text>
+        {/* --- SECTION 4: ACTUATOR CONTROLS --- */}
+        <Text style={styles.sectionHeader}>Actuator State Control</Text>
 
-        {/* --- PUMP CONTROL CARD --- */}
-        <View
-          style={{
-            backgroundColor: "#10233A",
-            borderWidth: 1,
-            borderColor: isFault
-              ? "rgba(239, 68, 68, 0.3)"
-              : "rgba(74, 222, 128, 0.2)",
-            borderRadius: 20,
-            padding: 16,
-            marginBottom: 14,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 14,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Power
-                size={16}
-                color={isFault ? "#EF4444" : "#4ADE80"}
-                style={{ marginRight: 8 }}
-              />
-              <Text
-                style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 13 }}
-              >
-                Main Pump Actuator
-              </Text>
+        <GlassCard variant={isFault ? 'red' : 'emerald'} style={{ marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Power size={16} color={isFault ? '#EF4444' : '#10B981'} style={{ marginRight: 8 }} />
+              <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Main Pump Motor</Text>
             </View>
-            <View
-              style={{
-                backgroundColor: isFault
-                  ? "rgba(239, 68, 68, 0.2)"
-                  : isRunning
-                    ? "rgba(74, 222, 128, 0.2)"
-                    : "rgba(148, 163, 184, 0.2)",
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: isFault
-                  ? "rgba(239, 68, 68, 0.3)"
-                  : isRunning
-                    ? "rgba(74, 222, 128, 0.3)"
-                    : "rgba(148, 163, 184, 0.3)",
-              }}
-            >
-              <Text
-                style={{
-                  color: isFault
-                    ? "#EF4444"
-                    : isRunning
-                      ? "#4ADE80"
-                      : "#94A3B8",
-                  fontSize: 9,
-                  fontWeight: "bold",
-                  textTransform: "uppercase",
-                }}
-              >
-                {data.pumpStatus}
-              </Text>
-            </View>
+            <StatusBadge status={isFault ? 'critical' : isRunning ? 'running' : 'idle'} label={data.pumpStatus} size="sm" />
           </View>
 
-          <View style={{ flexDirection: "row" }}>
+          <View style={{ flexDirection: 'row' }}>
             <TouchableOpacity
-              onPress={() => updateTelemetry({ pumpStatus: "running" })}
-              style={{
-                flex: 1,
-                marginRight: 8,
-                backgroundColor: isRunning ? "#059669" : "#0F172A",
-                borderWidth: 1,
-                borderColor: isRunning ? "#10B981" : "#1E293B",
-                paddingVertical: 12,
-                borderRadius: 12,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+              onPress={() => updateTelemetry({ pumpStatus: 'running' })}
+              style={[styles.actuatorBtn, isRunning && { backgroundColor: '#059669', borderColor: '#10B981' }]}
             >
-              <Text
-                style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 11 }}
-              >
-                PUMP START
-              </Text>
+              <Text style={styles.actuatorBtnText}>PUMP START</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => updateTelemetry({ pumpStatus: "stopped" })}
-              style={{
-                flex: 1,
-                marginRight: 8,
-                backgroundColor:
-                  data.pumpStatus === "stopped" ? "#475569" : "#0F172A",
-                borderWidth: 1,
-                borderColor:
-                  data.pumpStatus === "stopped" ? "#64748B" : "#1E293B",
-                paddingVertical: 12,
-                borderRadius: 12,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+              onPress={() => updateTelemetry({ pumpStatus: 'stopped' })}
+              style={[styles.actuatorBtn, data.pumpStatus === 'stopped' && { backgroundColor: '#334155', borderColor: '#64748B' }]}
             >
-              <Text
-                style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 11 }}
-              >
-                PUMP STOP
-              </Text>
+              <Text style={styles.actuatorBtnText}>PUMP STOP</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => updateTelemetry({ pumpStatus: "fault" })}
-              style={{
-                flex: 1,
-                backgroundColor: isFault ? "#DC2626" : "#0F172A",
-                borderWidth: 1,
-                borderColor: isFault ? "#EF4444" : "#1E293B",
-                paddingVertical: 12,
-                borderRadius: 12,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+              onPress={() => updateTelemetry({ pumpStatus: 'fault' })}
+              style={[styles.actuatorBtn, isFault && { backgroundColor: '#DC2626', borderColor: '#EF4444' }]}
             >
-              <Text
-                style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 11 }}
-              >
-                SIM FAULT
-              </Text>
+              <Text style={styles.actuatorBtnText}>FAULT SIM</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </GlassCard>
+
+        {/* Reset Settings Button */}
+        <TouchableOpacity
+          onPress={handleResetSettings}
+          style={styles.resetBtn}
+          activeOpacity={0.7}
+        >
+          <RotateCcw size={14} color="#94A3B8" style={{ marginRight: 6 }} />
+          <Text style={{ color: '#94A3B8', fontSize: 12, fontWeight: 'bold' }}>Restore Default Network Settings</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
 }
+
+const styles = {
+  sectionHeader: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: 'bold' as const,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase' as const,
+    marginBottom: 8,
+    marginTop: 4,
+    paddingHorizontal: 4,
+  },
+  inputLabel: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: 'bold' as const,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  textInput: {
+    backgroundColor: '#091524',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontFamily: 'monospace',
+  },
+  actionBtn: {
+    flex: 1,
+    marginHorizontal: 4,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  actionBtnText: {
+    fontSize: 11,
+    fontWeight: 'bold' as const,
+    letterSpacing: 0.6,
+  },
+  pingResultBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  actuatorBtn: {
+    flex: 1,
+    marginHorizontal: 3,
+    backgroundColor: '#091524',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  actuatorBtnText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold' as const,
+    fontSize: 10,
+  },
+  resetBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+};

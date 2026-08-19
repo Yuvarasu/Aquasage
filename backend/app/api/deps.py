@@ -56,6 +56,13 @@ def get_alert_repository(db: AsyncSession = Depends(get_db)) -> AlertRepository:
     return AlertRepository(db)
 
 
+from app.repositories.prediction import PredictionRepository
+
+
+def get_prediction_repository(db: AsyncSession = Depends(get_db)) -> PredictionRepository:
+    return PredictionRepository(db)
+
+
 # Service Dependencies
 def get_auth_service(user_repo: UserRepository = Depends(get_user_repository)) -> AuthService:
     return AuthService(user_repo)
@@ -88,26 +95,53 @@ def get_alert_service(alert_repo: AlertRepository = Depends(get_alert_repository
     return AlertService(alert_repo)
 
 
+from app.repositories.tank_state import TankStateRepository
+from app.services.physics import physics_service, PhysicsService
+
+
+def get_tank_state_repository(db: AsyncSession = Depends(get_db)) -> TankStateRepository:
+    return TankStateRepository(db)
+
+
 def get_sensor_data_service(
     sensor_repo: SensorReadingRepository = Depends(get_sensor_reading_repository),
     device_repo: DeviceRepository = Depends(get_device_repository),
     tank_repo: TankRepository = Depends(get_tank_repository),
+    tank_state_repo: TankStateRepository = Depends(get_tank_state_repository),
     alert_service: AlertService = Depends(get_alert_service),
 ) -> SensorDataService:
-    return SensorDataService(sensor_repo, device_repo, tank_repo, alert_service)
+    return SensorDataService(
+        sensor_repo=sensor_repo,
+        device_repo=device_repo,
+        tank_repo=tank_repo,
+        tank_state_repo=tank_state_repo,
+        alert_service=alert_service,
+        physics=physics_service,
+    )
 
 
 def get_digital_twin_service(
     tank_repo: TankRepository = Depends(get_tank_repository),
-    sensor_repo: SensorReadingRepository = Depends(get_sensor_reading_repository),
+    tank_state_repo: TankStateRepository = Depends(get_tank_state_repository),
 ) -> DigitalTwinService:
-    return DigitalTwinService(tank_repo, sensor_repo)
+    return DigitalTwinService(tank_repo, tank_state_repo)
 
 
 def get_analytics_service(
     sensor_repo: SensorReadingRepository = Depends(get_sensor_reading_repository),
 ) -> AnalyticsService:
     return AnalyticsService(sensor_repo)
+
+
+from app.services.ai.ai_service import AIService
+
+
+def get_ai_service(
+    prediction_repo: PredictionRepository = Depends(get_prediction_repository),
+    sensor_repo: SensorReadingRepository = Depends(get_sensor_reading_repository),
+    tank_repo: TankRepository = Depends(get_tank_repository),
+) -> AIService:
+    return AIService(prediction_repo, sensor_repo, tank_repo)
 
 
 # Authentication & Authorization Dependencies
