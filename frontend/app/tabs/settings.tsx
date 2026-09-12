@@ -119,7 +119,7 @@ export default function SettingsScreen() {
       >
         <View>
           <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 18, letterSpacing: 2 }}>
-            SCADA HARDWARE
+            HARDWARE
           </Text>
           <Text style={{ color: '#94A3B8', fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
             Network Gateway & Actuator Overrides

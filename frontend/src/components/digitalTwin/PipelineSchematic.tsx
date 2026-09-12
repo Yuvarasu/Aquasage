@@ -80,7 +80,7 @@ export const PipelineSchematic: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Animated.View style={[styles.statusDot, dotAnimatedStyle]} />
-          <RNText style={styles.headerTitle}>SCADA Hydraulic Digital Twin</RNText>
+          <RNText style={styles.headerTitle}>Digital Twin</RNText>
         </View>
         <View style={styles.headerRight}>
           <RNText style={styles.tapTip}>TAP NODE TO INSPECT</RNText>

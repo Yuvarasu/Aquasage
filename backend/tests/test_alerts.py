@@ -4,7 +4,7 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_scada_alerts_and_acknowledgment(client: AsyncClient, admin_token_headers: dict):
-    """Test fetching SCADA alarms and acknowledging an alarm."""
+    """Test fetching alarms and acknowledging an alarm."""
     # 1. Fetch initial alarms list
     alerts_resp = await client.get("/api/v1/alerts")
     assert alerts_resp.status_code == 200

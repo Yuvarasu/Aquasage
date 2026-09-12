@@ -81,7 +81,7 @@ export default function AlarmsScreen() {
       {/* --- HEADER --- */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>SCADA ALARMS</Text>
+          <Text style={styles.headerTitle}>ALARMS</Text>
           <Text style={styles.headerSub}>
             Real-Time Alert Notifications • {unackCount} Active
           </Text>

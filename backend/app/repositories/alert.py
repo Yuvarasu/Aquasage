@@ -13,7 +13,7 @@ class AlertRepository(BaseRepository[SCADAAlarmModel]):
         super().__init__(SCADAAlarmModel, session)
 
     async def get_active_alarms(self) -> List[SCADAAlarmModel]:
-        """Fetch all unacknowledged SCADA alarms."""
+        """Fetch all unacknowledged alarms."""
         stmt = (
             select(SCADAAlarmModel)
             .where(SCADAAlarmModel.acknowledged == False)

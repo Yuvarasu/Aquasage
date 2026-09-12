@@ -97,7 +97,7 @@ export default function DevicesScreen() {
       {/* --- HEADER --- */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>SCADA HARDWARE</Text>
+          <Text style={styles.headerTitle}>HARDWARE</Text>
           <Text style={styles.headerSub}>Teleoperation Actuators & Node Matrix</Text>
         </View>
 

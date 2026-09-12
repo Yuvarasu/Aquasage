@@ -17,7 +17,7 @@ export const HeaderStatusBar: React.FC = () => {
       <View>
         <View className="flex-row items-center space-x-1.5">
           <Ionicons name="water" size={16} color="#06b6d4" />
-          <Text className="text-white font-black text-base tracking-widest uppercase">AQUA-TWIN</Text>
+          <Text className="text-white font-black text-base tracking-widest uppercase">AQUASAGE</Text>
         </View>
         <Text className="text-slate-400 text-[11px] font-mono mt-0.5">
           {time.toLocaleDateString()} • {time.toLocaleTimeString()}

@@ -22,7 +22,7 @@ async def list_alerts(
     type: Optional[str] = Query(None, description="Filter by alert type"),
     alert_service: AlertService = Depends(get_alert_service),
 ):
-    """Fetch active and historical SCADA alarms with multi-parameter filtering."""
+    """Fetch active and historical alarms with multi-parameter filtering."""
     alerts = await alert_service.get_alerts(
         skip=skip,
         limit=limit,
@@ -63,7 +63,7 @@ async def acknowledge_all_alerts(
     tank_id: Optional[int] = Query(None, description="Optional tank ID to filter bulk acknowledgment"),
     alert_service: AlertService = Depends(get_alert_service),
 ):
-    """Bulk-acknowledge all active SCADA alarms."""
+    """Bulk-acknowledge all active alarms."""
     count = await alert_service.acknowledge_all_alerts(tank_id=tank_id)
     return StandardResponse(
         success=True,

@@ -1,0 +1,14 @@
+/* eslint-disable */
+import * as Router from 'expo-router';
+
+export * from 'expo-router';
+
+declare module 'expo-router' {
+  export namespace ExpoRouter {
+    export interface __routes<T extends string | object = string> {
+      hrefInputParams: { pathname: Router.RelativePathString, params?: Router.UnknownInputParams } | { pathname: Router.ExternalPathString, params?: Router.UnknownInputParams } | { pathname: `/`; params?: Router.UnknownInputParams; } | { pathname: `/_sitemap`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/ai-insights`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/alarms`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/analytics`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/devices`; params?: Router.UnknownInputParams; } | { pathname: `/tabs`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/settings`; params?: Router.UnknownInputParams; };
+      hrefOutputParams: { pathname: Router.RelativePathString, params?: Router.UnknownOutputParams } | { pathname: Router.ExternalPathString, params?: Router.UnknownOutputParams } | { pathname: `/`; params?: Router.UnknownOutputParams; } | { pathname: `/_sitemap`; params?: Router.UnknownOutputParams; } | { pathname: `/tabs/ai-insights`; params?: Router.UnknownOutputParams; } | { pathname: `/tabs/alarms`; params?: Router.UnknownOutputParams; } | { pathname: `/tabs/analytics`; params?: Router.UnknownOutputParams; } | { pathname: `/tabs/devices`; params?: Router.UnknownOutputParams; } | { pathname: `/tabs`; params?: Router.UnknownOutputParams; } | { pathname: `/tabs/settings`; params?: Router.UnknownOutputParams; };
+      href: Router.RelativePathString | Router.ExternalPathString | `/${`?${string}` | `#${string}` | ''}` | `/_sitemap${`?${string}` | `#${string}` | ''}` | `/tabs/ai-insights${`?${string}` | `#${string}` | ''}` | `/tabs/alarms${`?${string}` | `#${string}` | ''}` | `/tabs/analytics${`?${string}` | `#${string}` | ''}` | `/tabs/devices${`?${string}` | `#${string}` | ''}` | `/tabs${`?${string}` | `#${string}` | ''}` | `/tabs/settings${`?${string}` | `#${string}` | ''}` | { pathname: Router.RelativePathString, params?: Router.UnknownInputParams } | { pathname: Router.ExternalPathString, params?: Router.UnknownInputParams } | { pathname: `/`; params?: Router.UnknownInputParams; } | { pathname: `/_sitemap`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/ai-insights`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/alarms`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/analytics`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/devices`; params?: Router.UnknownInputParams; } | { pathname: `/tabs`; params?: Router.UnknownInputParams; } | { pathname: `/tabs/settings`; params?: Router.UnknownInputParams; };
+    }
+  }
+}

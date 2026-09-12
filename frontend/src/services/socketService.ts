@@ -8,7 +8,7 @@ class WebSocketService {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private pingTimestamp: number = 0;
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 20;
+  private maxReconnectAttempts: number = 0;
   private isIntentionallyClosed: boolean = false;
 
   /** Connect to WebSocket stream with dynamic URL resolution and exponential backoff */
