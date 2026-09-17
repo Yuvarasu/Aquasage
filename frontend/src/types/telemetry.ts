@@ -11,7 +11,7 @@ export interface TelemetryData {
   tankCapacityLiters: number; // Max Capacity e.g. 50,000L
   pumpStatus: PumpStatus;
   pumpRPM: number;
-  
+
   // Consumption Analytics
   dailyConsumptionLiters: number;
   hourlyConsumptionLiters: number;
@@ -20,8 +20,11 @@ export interface TelemetryData {
   leakProbability: number;    // 0.0 - 1.0 (Percentage)
   pumpHealthScore: number;    // 0 - 100%
   valveStatus: 'OPEN' | 'CLOSED' | 'PARTIAL';
-  waterTurbidityNTU: number;  // Water Quality
-  pHLevel: number;
+
+  // Water Quality Sensors
+  waterTurbidityNTU: number;  // Turbidity sensor (NTU)
+  pHLevel: number;            // pH sensor
+  tdsLevel: number;           // TDS sensor (ppm)
 }
 
 export interface SCADAAlarm {

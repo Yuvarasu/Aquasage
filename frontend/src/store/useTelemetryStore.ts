@@ -5,13 +5,12 @@ import { useSettingsStore } from './useSettingsStore';
 interface TelemetryState {
   data: TelemetryData;
   connectionState: ConnectionState;
-  isConnected: boolean; // Computed helper for backward compatibility
+  isConnected: boolean;
   isSimulating: boolean;
   streamSource: StreamSource;
   latencyMs: number;
   lastPacketTime: string | null;
-  
-  // Actions
+
   updateTelemetry: (newData: Partial<TelemetryData>, source?: StreamSource) => void;
   setConnectionState: (state: ConnectionState) => void;
   setConnectionStatus: (status: boolean) => void;
@@ -34,13 +33,14 @@ const initialTelemetry: TelemetryData = {
   valveStatus: 'OPEN',
   waterTurbidityNTU: 0.4,
   pHLevel: 7.2,
+  tdsLevel: 312,
 };
 
 export const useTelemetryStore = create<TelemetryState>((set) => ({
   data: initialTelemetry,
   connectionState: 'disconnected',
   isConnected: false,
-  isSimulating: false, // Default to real connection; enable mock only when offline or explicitly enabled
+  isSimulating: false,
   streamSource: 'internal_simulator',
   latencyMs: 0,
   lastPacketTime: null,
@@ -49,7 +49,7 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
     set((state) => {
       const { autoSwitchSimulation } = useSettingsStore.getState();
       const shouldDisableSim = autoSwitchSimulation && source === 'live_websocket' && state.isSimulating;
-      
+
       return {
         data: { ...state.data, ...newData, timestamp: new Date().toISOString() },
         lastPacketTime: new Date().toISOString(),
@@ -77,4 +77,4 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
       isSimulating,
       streamSource: isSimulating ? 'internal_simulator' : 'live_websocket',
     }),
-}));
+}));

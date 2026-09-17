@@ -10,24 +10,23 @@ import {
 import {
   X,
   Activity,
-  Gauge,
   Droplets,
-  Fan,
   ShieldCheck,
-  AlertTriangle,
-  Zap,
-  Sliders,
   CheckCircle2,
+  Filter,
+  GaugeCircle,
+  Power,
 } from 'lucide-react-native';
 import { TelemetryData } from '../../types/telemetry';
-import { GlassCard } from '../ui/GlassCard';
 import { StatusBadge } from '../ui/StatusBadge';
 
 export type NodeType =
   | 'SOURCE_RESERVOIR'
-  | 'PUMP_01'
-  | 'PRESSURE_SEN_01'
+  | 'BALL_VALVE'
   | 'FLOW_SEN_01'
+  | 'SENSING_UNIT'
+  | 'FILTRATION_UNIT'
+  | 'FLOW_SEN_02'
   | 'VILLAGE_TANK'
   | 'TOWN_GRID';
 
@@ -46,90 +45,173 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
 }) => {
   if (!nodeType) return null;
 
+  const waterGood =
+    telemetry.waterTurbidityNTU < 1.0 &&
+    telemetry.pHLevel >= 6.5 &&
+    telemetry.pHLevel <= 8.5 &&
+    telemetry.tdsLevel < 600;
+
+  const postFiltTurb = telemetry.waterTurbidityNTU * 0.35;
+  const postFiltTDS = telemetry.tdsLevel * 0.4;
+  const postFiltGood = postFiltTurb < 0.5 && postFiltTDS < 400;
+
   const getNodeInfo = () => {
     switch (nodeType) {
       case 'SOURCE_RESERVOIR':
         return {
-          title: 'Intake Source Reservoir',
+          title: 'Overhead Source Tank',
           tag: 'SRC-01',
           icon: Droplets,
           iconColor: '#00C2FF',
-          status: 'online' as const,
-          statusLabel: 'SUPPLY ACTIVE',
-          description: 'Primary groundwater intake and pre-filtration header reservoir.',
+          status: telemetry.tankLevel < 15 ? ('warning' as const) : ('online' as const),
+          statusLabel: telemetry.tankLevel < 15 ? 'LOW LEVEL' : 'SUPPLY ACTIVE',
+          description:
+            'Elevated storage tank feeding the main PVC pipeline through the ball valve. Raw water source for the treatment train.',
           metrics: [
-            { label: 'Intake Pressure', value: '1.85 BAR', normal: '1.5 - 2.2 BAR' },
+            { label: 'Tank Level', value: `${telemetry.tankLevel.toFixed(0)}%`, normal: '20% - 95%' },
+            {
+              label: 'Current Volume',
+              value: `${Math.round((telemetry.tankLevel / 100) * 50000).toLocaleString()} L`,
+              normal: 'Cap: 50,000 L',
+            },
             { label: 'Water Temperature', value: '21.4 °C', normal: '18 - 26 °C' },
-            { label: 'Turbidity', value: `${telemetry.waterTurbidityNTU} NTU`, normal: '< 1.0 NTU' },
-            { label: 'Intake Valve', value: 'OPEN (100%)', normal: 'Nominal' },
+            { label: 'Outlet Valve', value: telemetry.valveStatus, normal: 'OPEN' },
           ],
         };
 
-      case 'PUMP_01':
+      case 'BALL_VALVE':
         return {
-          title: 'Centrifugal Booster Pump 01',
-          tag: 'PUMP-VFD-01',
-          icon: Fan,
-          iconColor: telemetry.pumpStatus === 'running' ? '#10B981' : '#64748B',
-          status: telemetry.pumpStatus === 'running' ? ('running' as const) : telemetry.pumpStatus === 'fault' ? ('critical' as const) : ('offline' as const),
-          statusLabel: telemetry.pumpStatus.toUpperCase(),
-          description: 'Variable frequency drive centrifugal pump delivering pressurized main flow.',
+          title: 'Manual Ball Valve',
+          tag: 'BV-01',
+          icon: Power,
+          iconColor: telemetry.valveStatus === 'CLOSED' ? '#EF4444' : '#38BDF8',
+          status: telemetry.valveStatus === 'CLOSED' ? ('critical' as const) : ('online' as const),
+          statusLabel: telemetry.valveStatus === 'CLOSED' ? 'CLOSED' : 'OPEN',
+          description:
+            'Manual quarter-turn ball valve isolating the overhead tank from the main pipeline. Blue handle indicates manual operation.',
           metrics: [
-            { label: 'Motor Speed', value: `${telemetry.pumpRPM} RPM`, normal: '1200 - 1600 RPM' },
-            { label: 'Health Score', value: `${telemetry.pumpHealthScore}%`, normal: '> 85%' },
-            { label: 'Vibration RMS', value: '1.42 mm/s', normal: '< 2.8 mm/s' },
-            { label: 'Motor Power Draw', value: '4.8 kW', normal: '< 7.5 kW' },
-          ],
-        };
-
-      case 'PRESSURE_SEN_01':
-        return {
-          title: 'Piezoelectric Pressure Transducer',
-          tag: 'PT-01',
-          icon: Gauge,
-          iconColor: telemetry.pressure > 5.0 ? '#EF4444' : '#00C2FF',
-          status: telemetry.pressure > 5.0 ? ('critical' as const) : ('online' as const),
-          statusLabel: telemetry.pressure > 5.0 ? 'SURGE DETECTED' : 'NORMAL RANGE',
-          description: 'High-frequency line transducer sampling transmission header pressure at 200 Hz.',
-          metrics: [
-            { label: 'Current Pressure', value: `${telemetry.pressure.toFixed(2)} BAR`, normal: '2.5 - 5.0 BAR' },
-            { label: '24h Peak', value: '4.95 BAR', normal: '< 5.5 BAR' },
-            { label: '24h Minimum', value: '3.10 BAR', normal: '> 2.0 BAR' },
-            { label: 'Sampling Rate', value: '200 Hz', normal: 'Optimal' },
+            { label: 'Valve Position', value: telemetry.valveStatus, normal: 'OPEN' },
+            { label: 'Turn Type', value: 'Quarter-turn (90°)', normal: '—' },
+            { label: 'Bore Size', value: '25 mm', normal: '—' },
+            { label: 'Body Material', value: 'PVC', normal: '—' },
           ],
         };
 
       case 'FLOW_SEN_01':
         return {
-          title: 'Electromagnetic Flow Transmitter',
+          title: 'YF-S201 Inline Flow Sensor (Inlet)',
           tag: 'FT-01',
           icon: Activity,
           iconColor: '#38BDF8',
           status: telemetry.flowRate > 0 ? ('online' as const) : ('idle' as const),
           statusLabel: telemetry.flowRate > 0 ? 'METERING' : 'ZERO FLOW',
-          description: 'Electromagnetic full-bore flow meter measuring discharge volume velocity.',
+          description:
+            'Hall-effect inline flow sensor clamped on the main pipe measuring incoming raw water flow before the sensing unit.',
           metrics: [
-            { label: 'Flow Velocity', value: `${telemetry.flowRate.toFixed(1)} L/min`, normal: '10 - 90 L/min' },
-            { label: 'Daily Totalizer', value: `${telemetry.dailyConsumptionLiters.toLocaleString()} L`, normal: 'Accumulating' },
-            { label: 'Reynolds Regime', value: telemetry.flowRate > 30 ? 'Turbulent (Re=4200)' : 'Laminar', normal: 'Nominal' },
-            { label: 'Signal Quality', value: '99.8%', normal: '> 95%' },
+            { label: 'Flow Rate', value: `${telemetry.flowRate.toFixed(1)} L/min`, normal: '10 - 90 L/min' },
+            {
+              label: 'Daily Totalizer',
+              value: `${telemetry.dailyConsumptionLiters.toLocaleString()} L`,
+              normal: 'Accumulating',
+            },
+            { label: 'Signal Quality', value: '99.4%', normal: '> 95%' },
+            { label: 'Sensor Type', value: 'YF-S201', normal: 'Hall-effect' },
+          ],
+        };
+
+      case 'SENSING_UNIT':
+        return {
+          title: 'Inline Sensing Unit',
+          tag: 'SU-01',
+          icon: GaugeCircle,
+          iconColor: waterGood ? '#10B981' : '#F59E0B',
+          status: waterGood ? ('online' as const) : ('warning' as const),
+          statusLabel: waterGood ? 'WATER GOOD' : 'CONTAMINATED',
+          description:
+            'Single inline sensing cluster with turbidity, TDS, and pH probes tapping the main pipe via a T-junction.',
+          metrics: [
+            {
+              label: 'Turbidity',
+              value: `${telemetry.waterTurbidityNTU.toFixed(2)} NTU`,
+              normal: '< 1.0 NTU',
+            },
+            { label: 'TDS', value: `${telemetry.tdsLevel.toFixed(0)} ppm`, normal: '< 600 ppm' },
+            {
+              label: 'pH',
+              value: `${telemetry.pHLevel.toFixed(1)}`,
+              normal: '6.5 - 8.5',
+            },
+            { label: 'Verdict', value: waterGood ? 'GOOD' : 'CONTAMINATED', normal: 'GOOD' },
+          ],
+        };
+
+      case 'FILTRATION_UNIT':
+        return {
+          title: 'Multi-Stage Filtration Unit',
+          tag: 'FLT-01',
+          icon: Filter,
+          iconColor: waterGood ? '#10B981' : '#F59E0B',
+          status: waterGood ? ('idle' as const) : ('running' as const),
+          statusLabel: waterGood ? 'STANDBY' : 'FILTERING',
+          description:
+            'Sediment + carbon + RO filtration stages tapping the pipe via a T-junction, removing turbidity, TDS, and contaminants.',
+          metrics: [
+            { label: 'Stage 1 (Sediment)', value: waterGood ? 'IDLE' : 'ACTIVE', normal: 'Nominal' },
+            { label: 'Stage 2 (Carbon)', value: waterGood ? 'IDLE' : 'ACTIVE', normal: 'Nominal' },
+            { label: 'Stage 3 (RO)', value: waterGood ? 'IDLE' : 'ACTIVE', normal: 'Nominal' },
+            {
+              label: 'TDS Removal',
+              value: waterGood ? '—' : '~60%',
+              normal: '> 55%',
+            },
+          ],
+        };
+
+      case 'FLOW_SEN_02':
+        return {
+          title: 'YF-S201 Inline Flow Sensor (Post-Filtration)',
+          tag: 'FT-02',
+          icon: Activity,
+          iconColor: '#22D3EE',
+          status: telemetry.flowRate > 0 ? ('online' as const) : ('idle' as const),
+          statusLabel: telemetry.flowRate > 0 ? 'METERING' : 'ZERO FLOW',
+          description:
+            'Inline flow sensor measuring treated water flow returning from the filtration unit toward the village.',
+          metrics: [
+            {
+              label: 'Flow Rate',
+              value: `${(telemetry.flowRate * 0.97).toFixed(1)} L/min`,
+              normal: '10 - 90 L/min',
+            },
+            { label: 'Treatment Loss', value: '~3.0%', normal: '< 5%' },
+            { label: 'Signal Quality', value: '99.2%', normal: '> 95%' },
+            { label: 'Sensor Type', value: 'YF-S201', normal: 'Hall-effect' },
           ],
         };
 
       case 'VILLAGE_TANK':
         return {
-          title: 'Elevated Storage Tank #1',
+          title: 'Village Storage Tank',
           tag: 'TNK-01',
           icon: Droplets,
           iconColor: '#06B6D4',
           status: 'online' as const,
           statusLabel: 'STORAGE NOMINAL',
-          description: '50,000 Liters elevated gravity storage reservoir supplying village sectors.',
+          description:
+            'Elevated gravity storage reservoir receiving clean water from the pipeline and supplying the village distribution grid.',
           metrics: [
             { label: 'Level Percentage', value: `${telemetry.tankLevel.toFixed(0)}%`, normal: '20% - 95%' },
-            { label: 'Current Net Volume', value: `${Math.round((telemetry.tankLevel / 100) * 50000).toLocaleString()} L`, normal: 'Cap: 50,000L' },
+            {
+              label: 'Current Net Volume',
+              value: `${Math.round((telemetry.tankLevel / 100) * 50000).toLocaleString()} L`,
+              normal: 'Cap: 50,000 L',
+            },
             { label: 'pH Level', value: `${telemetry.pHLevel.toFixed(1)}`, normal: '6.5 - 8.5' },
-            { label: 'Water Turbidity', value: `${telemetry.waterTurbidityNTU} NTU`, normal: '< 1.0 NTU' },
+            {
+              label: 'Water Turbidity',
+              value: `${telemetry.waterTurbidityNTU.toFixed(2)} NTU`,
+              normal: '< 1.0 NTU',
+            },
           ],
         };
 
@@ -142,11 +224,16 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
           iconColor: '#10B981',
           status: 'online' as const,
           statusLabel: 'GRID STABLE',
-          description: 'Downstream gravity delivery network supplying 142 household connections.',
+          description:
+            'Downstream gravity delivery network supplying 142 household connections across the village.',
           metrics: [
             { label: 'Service Connections', value: '142 Households', normal: '100% Active' },
             { label: 'Delivery Head', value: '2.4 BAR', normal: '2.0 - 3.0 BAR' },
-            { label: 'Leak Probability', value: `${(telemetry.leakProbability * 100).toFixed(0)}%`, normal: '< 20%' },
+            {
+              label: 'Leak Probability',
+              value: `${(telemetry.leakProbability * 100).toFixed(0)}%`,
+              normal: '< 20%',
+            },
             { label: 'Water Quality Score', value: '98 / 100', normal: '> 90' },
           ],
         };
@@ -165,7 +252,6 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
     >
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
-          {/* Header */}
           <View style={styles.header}>
             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
               <View style={[styles.iconBox, { backgroundColor: `${info.iconColor}1A` }]}>
@@ -185,7 +271,6 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
-            {/* Status Strip */}
             <View style={styles.statusStrip}>
               <StatusBadge status={info.status} label={info.statusLabel} />
               <Text style={styles.timestampText}>
@@ -193,10 +278,8 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
               </Text>
             </View>
 
-            {/* Description */}
             <Text style={styles.description}>{info.description}</Text>
 
-            {/* Engineering Metrics Grid */}
             <Text style={styles.sectionHeader}>Operational Parameters</Text>
             <View style={styles.metricsGrid}>
               {info.metrics.map((m, idx) => (
@@ -208,7 +291,6 @@ export const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
               ))}
             </View>
 
-            {/* Action Buttons */}
             <View style={styles.actionRow}>
               <TouchableOpacity
                 onPress={onClose}
