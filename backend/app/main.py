@@ -76,8 +76,28 @@ def create_application() -> FastAPI:
     # 3. Global Exception Handlers
     register_exception_handlers(app)
 
-    # 4. Include V1 Router & Root WebSocket Router
-    from app.api.v1 import websocket
+    # 4. Include V1 Router, Root WebSocket Router & Aliases
+    from app.api.v1 import health, sensor_data, websocket
+
+    @app.get("/")
+    async def root():
+        return {
+            "status": "online",
+            "project": settings.PROJECT_NAME,
+            "version": settings.VERSION,
+            "docs": "/docs",
+            "endpoints": {
+                "telemetry_ingest": f"{settings.API_V1_STR}/sensor-data",
+                "health": f"{settings.API_V1_STR}/health",
+                "latest_telemetry": f"{settings.API_V1_STR}/sensor-data/latest",
+            },
+        }
+
+    # Mount convenient aliases at root level (e.g. /sensor-data and /health)
+    app.include_router(sensor_data.router)
+    app.include_router(health.router)
+
+    # Mount WebSocket and API V1
     app.include_router(websocket.router)
     app.include_router(api_v1_router, prefix=settings.API_V1_STR)
 

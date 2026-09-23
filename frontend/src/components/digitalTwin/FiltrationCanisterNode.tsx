@@ -1,14 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { G, Rect, Text as SvgText, Defs, LinearGradient, Stop, Circle } from 'react-native-svg';
-import Animated, {
-  useSharedValue,
-  useAnimatedProps,
-  withRepeat,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
-
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 export interface FiltrationCanisterNodeProps {
   x: number;
@@ -21,20 +12,24 @@ export const FiltrationCanisterNode: React.FC<FiltrationCanisterNodeProps> = ({
   y,
   active,
 }) => {
-  const glow = useSharedValue(0.35);
+  const [glow, setGlow] = useState(active ? 0.9 : 0.4);
 
   useEffect(() => {
-    glow.value = withRepeat(
-      withTiming(active ? 0.95 : 0.35, {
-        duration: active ? 800 : 1700,
-        easing: Easing.inOut(Easing.ease),
-      }),
-      -1,
-      true
-    );
+    let animId: number;
+    let start = Date.now();
+    const period = active ? 800 : 1800;
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const progress = (Math.sin((elapsed / period) * Math.PI * 2) + 1) / 2;
+      const minVal = active ? 0.6 : 0.3;
+      const maxVal = active ? 1.0 : 0.65;
+      setGlow(minVal + progress * (maxVal - minVal));
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
   }, [active]);
 
-  const animatedProps = useAnimatedProps(() => ({ opacity: glow.value }));
   const color = active ? '#F59E0B' : '#10B981';
 
   return (
@@ -50,7 +45,7 @@ export const FiltrationCanisterNode: React.FC<FiltrationCanisterNodeProps> = ({
       <Rect x="-18" y="-26" width="36" height="6" rx="2" fill="#1E293B" stroke={color} strokeWidth="0.8" />
 
       {/* Body */}
-      <AnimatedRect
+      <Rect
         x="-16"
         y="-20"
         width="32"
@@ -59,7 +54,7 @@ export const FiltrationCanisterNode: React.FC<FiltrationCanisterNodeProps> = ({
         fill="url(#canisterGradTwin)"
         stroke={color}
         strokeWidth="1.8"
-        animatedProps={animatedProps}
+        opacity={glow}
       />
 
       {/* Top LED */}

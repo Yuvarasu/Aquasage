@@ -1,13 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { G, Circle, Path, Text as SvgText, Rect } from 'react-native-svg';
-import Animated, {
-  useSharedValue,
-  useAnimatedProps,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 export interface ThreeWayValveNodeProps {
   x: number;
@@ -20,13 +12,21 @@ export const ThreeWayValveNode: React.FC<ThreeWayValveNodeProps> = ({
   y,
   routeToFilter,
 }) => {
-  const pulse = useSharedValue(0.5);
+  const [pulse, setPulse] = useState(0.8);
 
   useEffect(() => {
-    pulse.value = withRepeat(withTiming(1, { duration: 800 }), -1, true);
+    let animId: number;
+    let start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const val = 0.5 + 0.5 * Math.abs(Math.sin((elapsed / 600) * Math.PI));
+      setPulse(val);
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
   }, []);
 
-  const animatedProps = useAnimatedProps(() => ({ opacity: pulse.value }));
   const activeColor = routeToFilter ? '#F59E0B' : '#10B981';
 
   return (
@@ -49,7 +49,7 @@ export const ThreeWayValveNode: React.FC<ThreeWayValveNodeProps> = ({
       )}
 
       {/* Center pivot with pulse */}
-      <AnimatedCircle r="2.6" fill={activeColor} animatedProps={animatedProps} />
+      <Circle r="2.6" fill={activeColor} opacity={pulse} />
 
       {/* Tag pill above the pipe — safe, always above everything */}
       <Rect x="-16" y="-34" width="32" height="13" rx="6" fill="#0F172A" stroke={activeColor} strokeWidth="1" />

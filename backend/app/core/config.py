@@ -46,9 +46,11 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    # Benchtop Prototype Physical Defaults
-    DEFAULT_TANK_HEIGHT_CM: float = 30.0
+    # Tank Physical Dimensions (Benchtop Prototype)
+    DEFAULT_TANK_HEIGHT_CM: float = 25.0
     DEFAULT_TANK_CAPACITY_LITERS: float = 20.0
+    TANK_LOW_LEVEL_ALERT_CM: float = 5.0  # Alert when water level drops to <= 5 cm
+    TANK_HIGH_LEVEL_ALERT_CM: float = 5.0  # Alert when distance to brim is <= 5 cm
 
     # Flow Sensor Calibration (pulses/sec per L/min)
     FLOW_SENSOR_1_CALIBRATION_FACTOR: float = 7.5

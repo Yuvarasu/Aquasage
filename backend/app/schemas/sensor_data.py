@@ -113,13 +113,57 @@ class SensorDataIngest(BaseModel):
             }
             return flat_data
 
-        # If flat, harmonize flow_rate_lmin and water_level_percent aliases
-        if "water_level_percent" in data and "water_level_pct" not in data:
+        # If flat payload, harmonize all common field aliases from ESP32 nodes
+        if "node_id" in data and "device_id" not in data:
+            data["device_id"] = str(data["node_id"])
+        if "device_id" not in data or not data["device_id"]:
+            data["device_id"] = "ESP32_TANK_01"
+
+        if "waterPercentage" in data and "water_level_pct" not in data:
+            data["water_level_pct"] = data["waterPercentage"]
+        elif "water_percentage" in data and "water_level_pct" not in data:
+            data["water_level_pct"] = data["water_percentage"]
+        elif "water_level_percent" in data and "water_level_pct" not in data:
             data["water_level_pct"] = data["water_level_percent"]
+        elif "water_level" in data and "water_level_pct" not in data:
+            data["water_level_pct"] = data["water_level"]
+        elif "waterLevel" in data and "water_level_pct" not in data:
+            data["water_level_pct"] = data["waterLevel"]
+        elif "level" in data and "water_level_pct" not in data:
+            data["water_level_pct"] = data["level"]
+
+        if "distance" in data and "distance_cm" not in data:
+            data["distance_cm"] = data["distance"]
+
+        # If one is present and the other missing, derive based on 25cm calibrated tank
+        if "distance_cm" in data and "water_level_pct" not in data:
+            try:
+                dist = float(data["distance_cm"])
+                data["water_level_pct"] = round(max(0.0, min(100.0, ((25.0 - dist) / 25.0) * 100.0)), 1)
+            except (ValueError, TypeError):
+                data["water_level_pct"] = 0.0
+        elif "water_level_pct" in data and "distance_cm" not in data:
+            try:
+                pct = float(data["water_level_pct"])
+                data["distance_cm"] = round(max(0.0, 25.0 * (1.0 - (pct / 100.0))), 1)
+            except (ValueError, TypeError):
+                data["distance_cm"] = 25.0
+        elif "distance_cm" not in data and "water_level_pct" not in data:
+            data["distance_cm"] = 25.0
+            data["water_level_pct"] = 0.0
+
         if "flow_rate_lmin" in data and "flow_1_lpm" not in data:
             data["flow_1_lpm"] = data["flow_rate_lmin"]
         if "flow_1_lpm" in data and "flow_rate_lmin" not in data:
             data["flow_rate_lmin"] = data["flow_1_lpm"]
+        if "flow1" in data and "flow_1_lpm" not in data:
+            data["flow_1_lpm"] = data["flow1"]
+        if "flow2" in data and "flow_2_lpm" not in data:
+            data["flow_2_lpm"] = data["flow2"]
+        if "tds" in data and "tds_ppm" not in data:
+            data["tds_ppm"] = data["tds"]
+        if "turbidity" in data and "turbidity_raw" not in data:
+            data["turbidity_raw"] = int(data["turbidity"])
 
         return data
 
@@ -175,6 +219,9 @@ class FrontendTelemetryPayload(BaseModel):
     flow_2_lpm: Optional[float] = None
     water_loss_lpm: Optional[float] = None
     tds_ppm: Optional[float] = None
+    tdsLevel: Optional[float] = None
     turbidity_raw: Optional[int] = None
     turbidity_status: Optional[str] = None
     water_quality_status: Optional[str] = None
+    distance_cm: Optional[float] = None
+    water_height_cm: Optional[float] = None

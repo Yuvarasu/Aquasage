@@ -3,22 +3,12 @@ import { View, Text as RNText, StyleSheet, TouchableOpacity } from 'react-native
 import Svg, {
   Path, Rect, Circle, G, Defs, LinearGradient, Stop, Text as SvgText, Line,
 } from 'react-native-svg';
-import Animated, {
-  useSharedValue,
-  useAnimatedProps,
-  withRepeat,
-  withTiming,
-  Easing,
-  useAnimatedStyle,
-} from 'react-native-reanimated';
 import { useTelemetryStore } from '../../store/useTelemetryStore';
 import { FlowSensorNode } from './FlowSensorNode';
 import { SensorProbeNode } from './SensorProbeNode';
 import { FiltrationCanisterNode } from './FiltrationCanisterNode';
 import { NodeDetailModal, NodeType } from './NodeDetailModal';
 import { hapticsService } from '../../services/hapticsService';
-
-const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 // ---------------------------------------------------------------------------
 // LAYOUT
@@ -68,40 +58,55 @@ export const PipelineSchematic: React.FC = () => {
   const waterGood =
     waterTurbidityNTU < 1.0 && pHLevel >= 6.5 && pHLevel <= 8.5 && tdsLevel < 600;
 
+  const tankHeight = 25.0;
+  const currentHeightCm = data.water_height_cm ?? (data.distance_cm !== undefined ? Math.max(0, tankHeight - data.distance_cm) : Number(((tankLevel / 100) * tankHeight).toFixed(1)));
+  const isLowAlert = currentHeightCm <= 5.0 || tankLevel <= 20.0;
+  const isHighAlert = currentHeightCm >= 20.0 || tankLevel >= 80.0;
+
   const [selectedNode, setSelectedNode] = useState<NodeType | null>(null);
 
-  const mainDash = useSharedValue(0);
-  const dotOpacity = useSharedValue(1);
+  const [dashOffset, setDashOffset] = useState(0);
+  const [dotPulse, setDotPulse] = useState(1);
 
   useEffect(() => {
-    if (flowRate > 0) {
-      const duration = Math.max(600, 2200 - flowRate * 14);
-      mainDash.value = 0;
-      mainDash.value = withRepeat(
-        withTiming(DASH_TRAVEL, { duration, easing: Easing.linear }),
-        -1,
-        false
-      );
-    } else {
-      mainDash.value = 0;
+    if (flowRate <= 0) {
+      setDashOffset(0);
+      return;
     }
+    let animId: number;
+    let start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const speed = Math.max(25, 80 - flowRate * 0.3);
+      setDashOffset(-((elapsed / speed) % 23));
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
   }, [flowRate]);
 
   useEffect(() => {
-    dotOpacity.value = withRepeat(withTiming(0.3, { duration: 1000 }), -1, true);
+    let animId: number;
+    let start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      setDotPulse(0.35 + 0.65 * Math.abs(Math.sin((elapsed / 1000) * Math.PI)));
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
   }, []);
-
-  const mainFlowProps = useAnimatedProps(() => ({ strokeDashoffset: mainDash.value }));
-  const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }));
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Animated.View style={[styles.statusDot, dotStyle]} />
-          <RNText style={styles.headerTitle}>Digital Twin</RNText>
+          <View style={[styles.statusDot, { opacity: dotPulse }, isLowAlert ? { backgroundColor: '#EF4444' } : {}]} />
+          <RNText style={styles.headerTitle}>Digital Twin (25cm Tank)</RNText>
         </View>
-        <RNText style={styles.tapTip}>TAP NODE TO INSPECT</RNText>
+        <RNText style={[styles.tapTip, isLowAlert ? { borderColor: '#EF4444', color: '#EF4444', backgroundColor: 'rgba(239, 68, 68, 0.15)' } : {}]}>
+          {isLowAlert ? '⚠️ CRITICAL LOW (<=5cm)' : isHighAlert ? '⚠️ HIGH LEVEL (>=20cm)' : 'TAP NODE TO INSPECT'}
+        </RNText>
       </View>
 
       <View style={{ position: 'relative' }}>
@@ -124,6 +129,10 @@ export const PipelineSchematic: React.FC = () => {
               <Stop offset="0%" stopColor="#38BDF8" />
               <Stop offset="100%" stopColor="#1E40AF" />
             </LinearGradient>
+            <LinearGradient id="tankWaterAlert" x1="0%" y1="0%" x2="0%" y2="100%">
+              <Stop offset="0%" stopColor="#EF4444" />
+              <Stop offset="100%" stopColor="#991B1B" />
+            </LinearGradient>
             <LinearGradient id="hutRoof" x1="0%" y1="0%" x2="0%" y2="100%">
               <Stop offset="0%" stopColor="#10B981" />
               <Stop offset="100%" stopColor="#047857" />
@@ -134,18 +143,18 @@ export const PipelineSchematic: React.FC = () => {
             </LinearGradient>
           </Defs>
 
-          {/* OVERHEAD TANK */}
+          {/* OVERHEAD TANK HEADER */}
           <SvgText
             x={TANK_CX}
             y={14}
-            fill="#94A3B8"
-            fontSize="7.5"
+            fill={isLowAlert ? '#EF4444' : isHighAlert ? '#F59E0B' : '#94A3B8'}
+            fontSize="7"
             fontWeight="bold"
             fontFamily="monospace"
             textAnchor="middle"
             letterSpacing="0.6"
           >
-            OVERHEAD TANK
+            {isLowAlert ? '⚠️ ALERT: <= 5cm' : isHighAlert ? '⚠️ OVERFLOW: >= 20cm' : '25cm SOURCE TANK'}
           </SvgText>
 
           <G transform={[{ translateX: TANK_CX }, { translateY: TANK_TOP }]}>
@@ -164,8 +173,8 @@ export const PipelineSchematic: React.FC = () => {
               height={TANK_H}
               rx={4}
               fill="url(#tankBody)"
-              stroke="#475569"
-              strokeWidth="1.8"
+              stroke={isLowAlert ? '#EF4444' : isHighAlert ? '#F59E0B' : '#475569'}
+              strokeWidth={isLowAlert ? 2.2 : 1.8}
             />
             <Rect
               x={-TANK_W / 2 + 3}
@@ -173,7 +182,7 @@ export const PipelineSchematic: React.FC = () => {
               width={TANK_W - 6}
               height={Math.max(0, (TANK_H - 6) * (tankLevel / 100))}
               rx={2}
-              fill="url(#tankWater)"
+              fill={isLowAlert ? 'url(#tankWaterAlert)' : 'url(#tankWater)'}
             />
             <Rect
               x={-TANK_W / 2 + 3}
@@ -190,19 +199,30 @@ export const PipelineSchematic: React.FC = () => {
               height={8}
               rx={3}
               fill="#1E293B"
-              stroke="#475569"
+              stroke={isLowAlert ? '#EF4444' : '#475569'}
               strokeWidth="1.2"
             />
             <SvgText
               x="0"
-              y={TANK_H / 2 + 6}
-              fill="#FFFFFF"
-              fontSize="14"
+              y={TANK_H / 2 - 1}
+              fill={isLowAlert ? '#EF4444' : '#FFFFFF'}
+              fontSize="12"
               fontWeight="900"
               fontFamily="monospace"
               textAnchor="middle"
             >
               {tankLevel.toFixed(0)}%
+            </SvgText>
+            <SvgText
+              x="0"
+              y={TANK_H / 2 + 10}
+              fill={isLowAlert ? '#FCA5A5' : '#38BDF8'}
+              fontSize="7"
+              fontWeight="bold"
+              fontFamily="monospace"
+              textAnchor="middle"
+            >
+              {currentHeightCm.toFixed(1)} cm
             </SvgText>
           </G>
 
@@ -224,6 +244,14 @@ export const PipelineSchematic: React.FC = () => {
             fill="#FFFFFF"
             opacity={0.08}
           />
+          {/* Baseline water in drop pipe */}
+          <Path
+            d={`M ${DROP_X} ${TANK_OUTLET_Y + 4} L ${DROP_X} ${PIPE_Y - 4}`}
+            stroke="#00C2FF"
+            strokeWidth="6"
+            opacity={flowRate > 0 ? 0.2 : 0.08}
+            strokeLinecap="round"
+          />
           {flowRate > 0 && (
             <>
               <Path
@@ -233,12 +261,12 @@ export const PipelineSchematic: React.FC = () => {
                 opacity="0.18"
                 strokeLinecap="round"
               />
-              <AnimatedPath
+              <Path
                 d={`M ${DROP_X} ${TANK_OUTLET_Y + 4} L ${DROP_X} ${PIPE_Y - 4}`}
                 stroke="#00E5FF"
                 strokeWidth="6"
                 strokeDasharray={DASH}
-                animatedProps={mainFlowProps}
+                strokeDashoffset={dashOffset}
                 strokeLinecap="round"
               />
             </>
@@ -336,6 +364,14 @@ export const PipelineSchematic: React.FC = () => {
           ))}
 
           {/* CONTINUOUS FLOW */}
+          {/* Baseline water in horizontal pipe */}
+          <Path
+            d={`M ${DROP_X + 6} ${PIPE_Y} L ${HUT_LEFT_WALL} ${PIPE_Y}`}
+            stroke="#00C2FF"
+            strokeWidth="6"
+            opacity={flowRate > 0 ? 0.2 : 0.08}
+            strokeLinecap="round"
+          />
           {flowRate > 0 && (
             <>
               <Path
@@ -345,20 +381,20 @@ export const PipelineSchematic: React.FC = () => {
                 opacity="0.18"
                 strokeLinecap="round"
               />
-              <AnimatedPath
+              <Path
                 d={`M ${DROP_X + 6} ${PIPE_Y} L ${HUT_LEFT_WALL} ${PIPE_Y}`}
                 stroke="#00E5FF"
                 strokeWidth="7"
                 strokeDasharray={DASH}
-                animatedProps={mainFlowProps}
+                strokeDashoffset={dashOffset}
                 strokeLinecap="round"
               />
-              <AnimatedPath
+              <Path
                 d={`M ${DROP_X + 6} ${PIPE_Y} L ${HUT_LEFT_WALL} ${PIPE_Y}`}
                 stroke="#E0FFFF"
                 strokeWidth="2"
                 strokeDasharray={DASH}
-                animatedProps={mainFlowProps}
+                strokeDashoffset={dashOffset}
                 strokeLinecap="round"
                 opacity="0.8"
               />
@@ -535,6 +571,14 @@ export const PipelineSchematic: React.FC = () => {
           activeOpacity={0.6}
         />
       </View>
+
+      {/* NODE DETAIL MODAL */}
+      <NodeDetailModal
+        visible={selectedNode !== null}
+        nodeType={selectedNode}
+        telemetry={data}
+        onClose={() => setSelectedNode(null)}
+      />
     </View>
   );
 };

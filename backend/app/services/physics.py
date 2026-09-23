@@ -20,12 +20,23 @@ class PhysicsService:
         height = tank_height_cm or settings.DEFAULT_TANK_HEIGHT_CM
         capacity = capacity_liters or settings.DEFAULT_TANK_CAPACITY_LITERS
 
-        water_height = max(0.0, height - distance_cm)
-        level_pct = min(100.0, max(0.0, (water_height / height) * 100.0))
+        # HC-SR04 ultrasonic physical blind zone & timeout glitch protection:
+        # Minimum physical measurement distance for HC-SR04 is 2.0 cm (~116 µs).
+        # When an empty tank produces no echo (timeout), ESP32 pulseIn returns 1-2 µs (~0.02 cm).
+        # If distance < 2.0 cm or distance >= height, the tank is empty (air gap = height, water depth = 0.0).
+        if distance_cm < 2.0 or distance_cm >= height:
+            clean_distance = height
+            water_height = 0.0
+            level_pct = 0.0
+        else:
+            clean_distance = distance_cm
+            water_height = max(0.0, height - clean_distance)
+            level_pct = min(100.0, max(0.0, (water_height / height) * 100.0))
+
         current_volume = round(capacity * (level_pct / 100.0), 2)
 
         return {
-            "distance_cm": round(distance_cm, 2),
+            "distance_cm": round(clean_distance, 2),
             "water_height_cm": round(water_height, 2),
             "water_level_percent": round(level_pct, 2),
             "current_volume_liters": current_volume,

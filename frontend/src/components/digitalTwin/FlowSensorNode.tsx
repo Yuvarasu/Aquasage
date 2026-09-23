@@ -1,14 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { G, Circle, Rect, Path, Text as SvgText } from 'react-native-svg';
-import Animated, {
-  useSharedValue,
-  useAnimatedProps,
-  withRepeat,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
-
-const AnimatedG = Animated.createAnimatedComponent(G);
 
 export interface FlowSensorNodeProps {
   x: number;
@@ -29,19 +20,19 @@ export const FlowSensorNode: React.FC<FlowSensorNodeProps> = ({
   color = '#38BDF8',
   isAlert = false,
 }) => {
-  const rotation = useSharedValue(0);
+  const [rotation, setRotation] = useState(0);
 
   useEffect(() => {
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 1100, easing: Easing.linear }),
-      -1,
-      false
-    );
+    let animId: number;
+    let start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      setRotation((elapsed / 3.2) % 360);
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
   }, []);
-
-  const animatedRotorProps = useAnimatedProps(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
 
   const activeColor = isAlert ? '#EF4444' : color;
 
@@ -55,9 +46,9 @@ export const FlowSensorNode: React.FC<FlowSensorNodeProps> = ({
 
       {/* Small rotor window */}
       <Circle cx="0" cy="0" r="5.5" fill="#030812" stroke={activeColor} strokeWidth="0.9" />
-      <AnimatedG animatedProps={animatedRotorProps}>
+      <G rotation={rotation} origin="0, 0">
         <Path d="M -3.5 0 L 3.5 0 M 0 -3.5 L 0 3.5" stroke={activeColor} strokeWidth="1.2" strokeLinecap="round" />
-      </AnimatedG>
+      </G>
       <Circle r="1.2" fill={activeColor} />
 
       {/* Status LED */}

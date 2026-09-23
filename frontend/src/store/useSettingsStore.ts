@@ -14,7 +14,7 @@ interface SettingsState {
   resetToDefaults: () => void;
 }
 
-const DEFAULT_HOST = '10.10.32.35';
+const DEFAULT_HOST = '10.10.72.92';
 const DEFAULT_PORT = '8000';
 
 export const useSettingsStore = create<SettingsState>((set) => ({

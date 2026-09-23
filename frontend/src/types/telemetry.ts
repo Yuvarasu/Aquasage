@@ -25,6 +25,11 @@ export interface TelemetryData {
   waterTurbidityNTU: number;  // Turbidity sensor (NTU)
   pHLevel: number;            // pH sensor
   tdsLevel: number;           // TDS sensor (ppm)
+
+  // Tank Physical Calibration (25.0 cm benchtop prototype)
+  distance_cm?: number;       // Ultrasonic distance in cm
+  water_height_cm?: number;   // Current water depth in cm
+  tankHeightCm?: number;      // Calibrated tank height (25.0 cm)
 }
 
 export interface SCADAAlarm {

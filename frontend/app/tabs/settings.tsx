@@ -67,7 +67,7 @@ export default function SettingsScreen() {
 
   const handleResetSettings = () => {
     resetToDefaults();
-    setHostInput('10.10.32.35');
+    setHostInput('10.10.72.92');
     setPortInput('8000');
     setPingStatus(null);
     socketService.reconnect();

@@ -27,7 +27,20 @@ export class ApiService {
       if (!response.ok) return null;
       const result = await response.json();
       if (result.success && result.data) {
-        return result.data as TelemetryData;
+        const d = result.data;
+        const tankLvl = d.tankLevel ?? d.water_level_pct ?? 0;
+        const dist = d.distance_cm;
+        const waterHeight = d.water_height_cm ?? (dist !== undefined ? Math.max(0, 25.0 - dist) : Number(((tankLvl / 100) * 25.0).toFixed(1)));
+        return {
+          ...d,
+          tankLevel: tankLvl,
+          tankCapacityLiters: d.tankCapacityLiters || 20,
+          tankHeightCm: 25.0,
+          distance_cm: dist,
+          water_height_cm: waterHeight,
+          tdsLevel: d.tdsLevel ?? d.tds_ppm ?? d.tds ?? 135,
+          waterTurbidityNTU: d.waterTurbidityNTU ?? (d.turbidity_raw ? Number((d.turbidity_raw / 2500.0).toFixed(2)) : 0.4),
+        } as TelemetryData;
       }
       return null;
     } catch (error) {

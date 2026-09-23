@@ -65,6 +65,12 @@ class AlertService:
                 "data": alert_payload.model_dump(),
             }
         )
+        await connection_manager.broadcast_all(
+            {
+                "event": "alert",
+                "data": alert_payload.model_dump(),
+            }
+        )
 
         return alert
 
@@ -136,20 +142,46 @@ class AlertService:
         tds_ppm: float,
         turbidity_raw: int,
         source_node: str = "ESP32_TANK_01",
+        distance_cm: Optional[float] = None,
+        tank_height_cm: Optional[float] = None,
     ) -> List[SCADAAlarmModel]:
         """Evaluate benchtop prototype telemetry and trigger alerts with deduplication."""
         created_alerts: List[SCADAAlarmModel] = []
+        height = tank_height_cm or settings.DEFAULT_TANK_HEIGHT_CM
 
-        # 1. Critical Low Water Level Alert
-        if water_level_pct < 20.0:
+        # Calculate water height in cm (in 25 cm tank, 5 cm remaining = 20% level)
+        if distance_cm is not None:
+            water_height_cm = max(0.0, height - distance_cm)
+            dist_to_brim_cm = distance_cm
+        else:
+            water_height_cm = round(height * (water_level_pct / 100.0), 1)
+            dist_to_brim_cm = max(0.0, height - water_height_cm)
+
+        # 1. Critical Low Water Level Alert (Trigger when water level drops to <= 5 cm or <= 20%)
+        if water_height_cm <= settings.TANK_LOW_LEVEL_ALERT_CM or water_level_pct <= 20.0:
             alert = await self.create_or_deduplicate_alert(
                 AlertCreate(
                     tank_id=tank_id,
                     alarm_code="LOW_WATER_LEVEL",
                     type="Low Tank Level",
-                    title="Critical Low Water Level",
-                    message=f"Tank water level dropped to {water_level_pct:.1f}% (<20% threshold).",
-                    severity="critical" if water_level_pct < 10.0 else "warning",
+                    title="Critical Low Water Level (<= 5cm)",
+                    message=f"Tank water level dropped to {water_height_cm:.1f} cm ({water_level_pct:.1f}% in {height:.0f}cm tank). Reserve critical!",
+                    severity="critical" if water_height_cm <= 3.0 else "warning",
+                    source_node=source_node,
+                )
+            )
+            created_alerts.append(alert)
+
+        # 1b. High Water Level Warning (Trigger when water surface comes to <= 5 cm of brim / >= 80%)
+        if dist_to_brim_cm <= settings.TANK_HIGH_LEVEL_ALERT_CM or water_level_pct >= 80.0:
+            alert = await self.create_or_deduplicate_alert(
+                AlertCreate(
+                    tank_id=tank_id,
+                    alarm_code="HIGH_WATER_LEVEL",
+                    type="High Tank Level",
+                    title="High Water Level Warning (<= 5cm to brim)",
+                    message=f"Water surface reached within {dist_to_brim_cm:.1f} cm of brim ({water_level_pct:.1f}% in {height:.0f}cm tank). Risk of overflow.",
+                    severity="warning",
                     source_node=source_node,
                 )
             )

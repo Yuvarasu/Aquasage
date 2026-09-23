@@ -8,7 +8,7 @@ class WebSocketService {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private pingTimestamp: number = 0;
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 50;
   private isIntentionallyClosed: boolean = false;
 
   /** Connect to WebSocket stream with dynamic URL resolution and exponential backoff */
@@ -56,7 +56,7 @@ class WebSocketService {
           }
 
           // Handle SCADA Alert broadcast
-          if (rawData.event === 'alert' || rawData.event === 'scada_alarm') {
+          if (rawData.event === 'alert' || rawData.event === 'scada_alarm' || rawData.event === 'alert_created') {
             const alertData = rawData.data || rawData;
             if (alertData.title) {
               useAlertStore.getState().addAlarm({
@@ -69,7 +69,7 @@ class WebSocketService {
             return;
           }
 
-          // Handle Telemetry Update
+          // Handle Telemetry Update & Digital Twin Stream
           const telemetry = rawData.data || (rawData.event === 'telemetry_update' ? rawData.data : rawData);
 
           if (
@@ -79,21 +79,34 @@ class WebSocketService {
               telemetry.flowRate !== undefined ||
               telemetry.flow_rate_lmin !== undefined ||
               telemetry.tankLevel !== undefined ||
-              telemetry.water_level_pct !== undefined)
+              telemetry.water_level_pct !== undefined ||
+              telemetry.tank_level_percent !== undefined)
           ) {
+            const rawTurbidity = telemetry.turbidity_raw ?? 1000;
+            const computedNTU = telemetry.waterTurbidityNTU ?? telemetry.turbidity_ntu ?? (rawTurbidity ? Number((rawTurbidity / 2500.0).toFixed(2)) : 0.4);
+
+            const tankLvl = telemetry.tankLevel ?? telemetry.water_level_pct ?? telemetry.tank_level_percent ?? 0;
+            const distCm = telemetry.distance_cm ?? telemetry.distance;
+            const waterHeightCm = telemetry.water_height_cm ?? (distCm !== undefined ? Math.max(0, 25.0 - distCm) : Number(((tankLvl / 100) * 25.0).toFixed(1)));
+
             useTelemetryStore.getState().updateTelemetry(
               {
-                pressure: telemetry.pressure ?? telemetry.pressure_bar,
-                flowRate: telemetry.flowRate ?? telemetry.flow_rate_lmin ?? telemetry.flow_1_lpm ?? 0,
-                tankLevel: telemetry.tankLevel ?? telemetry.water_level_pct ?? 0,
-                pumpStatus: telemetry.pumpStatus ?? (telemetry.flowRate > 0 ? 'running' : 'stopped'),
+                pressure: telemetry.pressure ?? telemetry.pressure_bar ?? 3.8,
+                flowRate: telemetry.flowRate ?? telemetry.flow_rate_lmin ?? telemetry.flow_1_lpm ?? telemetry.flow_in ?? 0,
+                tankLevel: tankLvl,
+                tankCapacityLiters: telemetry.tankCapacityLiters ?? telemetry.capacity_liters ?? 20,
+                tankHeightCm: 25.0,
+                distance_cm: distCm,
+                water_height_cm: waterHeightCm,
+                pumpStatus: telemetry.pumpStatus ?? (telemetry.pump === 'ON' ? 'running' : 'stopped'),
                 pumpRPM: telemetry.pumpRPM ?? 1450,
-                dailyConsumptionLiters: telemetry.dailyConsumptionLiters ?? telemetry.daily_consumption_liters ?? 0,
+                dailyConsumptionLiters: telemetry.dailyConsumptionLiters ?? telemetry.daily_consumption_liters ?? telemetry.flow_1_total_liters ?? 0,
                 leakProbability: telemetry.leakProbability ?? telemetry.leak_probability ?? 0,
                 pumpHealthScore: telemetry.pumpHealthScore ?? 95,
-                waterTurbidityNTU: telemetry.waterTurbidityNTU ?? telemetry.turbidity_ntu ?? 0.4,
+                waterTurbidityNTU: computedNTU,
                 pHLevel: telemetry.pHLevel ?? telemetry.ph_level ?? 7.2,
-                valveStatus: telemetry.valveStatus ?? (telemetry.pumpStatus === 'running' ? 'OPEN' : 'CLOSED'),
+                tdsLevel: telemetry.tdsLevel ?? telemetry.tds_ppm ?? telemetry.tds ?? 140,
+                valveStatus: telemetry.valveStatus ?? (telemetry.pumpStatus === 'running' || telemetry.pump === 'ON' ? 'OPEN' : 'CLOSED'),
               },
               'live_websocket'
             );
@@ -123,23 +136,22 @@ class WebSocketService {
     }
   }
 
-  /** Exponential backoff with randomized jitter */
+  /** Exponential backoff with randomized jitter and background polling resilience */
   private scheduleReconnect() {
     if (this.reconnectTimeout || this.isIntentionallyClosed) return;
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.warn('[WebSocket] Max reconnect attempts reached. Setting disconnected state.');
-      useTelemetryStore.getState().setConnectionState('disconnected');
-      return;
+      console.warn('[WebSocket] Max reconnect burst reached. Falling back to 10s background interval.');
+      this.reconnectAttempts = 1; // Reset to keep retrying periodically
     }
 
     this.reconnectAttempts++;
-    // Exponential delay: 1s, 2s, 4s, 8s, up to 30s max + jitter
-    const baseDelay = Math.min(30000, 1000 * Math.pow(1.8, this.reconnectAttempts - 1));
-    const jitter = Math.random() * 800;
+    // Exponential delay: 1s, 2s, 4s, 8s, up to 10s max + jitter
+    const baseDelay = Math.min(10000, 1000 * Math.pow(1.5, Math.min(6, this.reconnectAttempts - 1)));
+    const jitter = Math.random() * 500;
     const delay = Math.round(baseDelay + jitter);
 
-    console.log(`[WebSocket] Reconnecting in ${delay}ms (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+    console.log(`[WebSocket] Reconnecting in ${delay}ms (Attempt ${this.reconnectAttempts})...`);
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       this.connect();

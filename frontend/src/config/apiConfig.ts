@@ -1,19 +1,40 @@
 import { useSettingsStore } from '../store/useSettingsStore';
+import Constants from 'expo-constants';
 
-// Default static fallback constants
-export const DEFAULT_SYSTEM_IP = '10.10.32.35';
+// Auto-detect host IP: if on Web uses browser host; if on Expo mobile uses Metro host; fallback to 10.10.72.92
+export const getAutoDetectedHost = (): string => {
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const webHost = window.location.hostname;
+    if (webHost && webHost !== 'localhost' && webHost !== '127.0.0.1') {
+      return webHost;
+    }
+  }
+
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost;
+  if (hostUri && typeof hostUri === 'string') {
+    const ip = hostUri.split(':')[0];
+    if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
+      return ip;
+    }
+  }
+
+  return '10.10.72.92';
+};
+
+export const DEFAULT_SYSTEM_IP = '10.10.72.92';
 export const DEFAULT_API_PORT = '8000';
 
 export const getApiBaseUrl = (): string => {
   const { serverHost, serverPort } = useSettingsStore.getState();
-  const host = serverHost || DEFAULT_SYSTEM_IP;
+  // If serverHost is stale default 10.10.32.35, use auto-detected host
+  const host = (!serverHost || serverHost === '10.10.32.35') ? getAutoDetectedHost() : serverHost;
   const port = serverPort || DEFAULT_API_PORT;
   return `http://${host}:${port}/api/v1`;
 };
 
 export const getWsBaseUrl = (): string => {
   const { serverHost, serverPort } = useSettingsStore.getState();
-  const host = serverHost || DEFAULT_SYSTEM_IP;
+  const host = (!serverHost || serverHost === '10.10.32.35') ? getAutoDetectedHost() : serverHost;
   const port = serverPort || DEFAULT_API_PORT;
   return `ws://${host}:${port}/ws`;
 };

@@ -38,7 +38,12 @@ export default function DashboardScreen() {
     // 2. Fetch initial telemetry snapshot from backend REST API
     syncTelemetry();
 
-    // 3. Fallback simulation control
+    // 3. Fallback active polling every 3 seconds to guarantee updates if WS drops or on mobile
+    const pollInterval = setInterval(() => {
+      syncTelemetry();
+    }, 3000);
+
+    // 4. Fallback simulation control
     if (isSimulating) {
       mockSimulator.start();
     } else {
@@ -46,14 +51,20 @@ export default function DashboardScreen() {
     }
 
     return () => {
+      clearInterval(pollInterval);
       mockSimulator.stop();
     };
   }, [isSimulating]);
 
-  // Derived state calculations
+  // Derived state calculations for 25.0 cm tank calibration
   const isPressureHigh = data.pressure > 5.0;
   const isLeakDetected = data.leakProbability > 0.4;
   const isPumpRunning = data.pumpStatus === 'running';
+
+  const tankHeightCm = 25.0;
+  const currentWaterHeightCm = data.water_height_cm ?? Number(((data.tankLevel / 100) * tankHeightCm).toFixed(1));
+  const isCriticalLow = currentWaterHeightCm <= 5.0 || data.tankLevel <= 20.0;
+  const isNearOverflow = currentWaterHeightCm >= 20.0 || data.tankLevel >= 80.0;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#071426' }}>
@@ -64,6 +75,7 @@ export default function DashboardScreen() {
         <View>
           <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 18, letterSpacing: 2 }}>AQUASAGE</Text>
           <Text style={{ color: '#94A3B8', fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
+            25cm BENCHTOP TWIN • {currentWaterHeightCm.toFixed(1)} cm
           </Text>
         </View>
       </View>
@@ -84,19 +96,19 @@ export default function DashboardScreen() {
         }
       >
         {/* --- HERO STATUS CARD --- */}
-        <GlassCard variant="cyan" style={{ marginBottom: 12 }} padding={14}>
+        <GlassCard variant={isCriticalLow ? 'red' : 'cyan'} style={{ marginBottom: 12 }} padding={14}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View>
               <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '900', letterSpacing: -0.3 }}>
                 Primary Distribution Matrix
               </Text>
               <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
-                Tank #1 (Main Elevated Storage) • Grid Sector Alpha
+                Tank #1 (25cm Calibrated Storage) • Depth: {currentWaterHeightCm.toFixed(1)} cm
               </Text>
             </View>
-            <View style={{ backgroundColor: 'rgba(6, 182, 212, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-              <Text style={{ color: '#00C2FF', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold' }}>
-                50,000L CAP
+            <View style={{ backgroundColor: isCriticalLow ? 'rgba(239, 68, 68, 0.2)' : 'rgba(6, 182, 212, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+              <Text style={{ color: isCriticalLow ? '#EF4444' : '#00C2FF', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold' }}>
+                {isCriticalLow ? 'CRITICAL LOW (<=5cm)' : `${data.tankCapacityLiters || 20}L CAP`}
               </Text>
             </View>
           </View>
@@ -135,16 +147,19 @@ export default function DashboardScreen() {
             statusBg={data.flowRate > 0 ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.15)'}
           />
 
-          {/* 3. Tank Level */}
+          {/* 3. Tank Level (25cm Calibrated) */}
           <MetricTile
-            label="Tank Volume"
-            value={data.tankLevel.toFixed(0)}
-            unit="%"
+            label="Tank Water Depth"
+            value={`${currentWaterHeightCm.toFixed(1)}`}
+            unit="cm"
             icon={Droplets}
-            iconColor="#06B6D4"
-            variant="cyan"
+            iconColor={isCriticalLow ? '#EF4444' : '#06B6D4'}
+            variant={isCriticalLow ? 'red' : 'cyan'}
             progressPercent={data.tankLevel}
-            subtext={`${((data.tankLevel / 100) * 50000).toLocaleString()} / 50,000 Liters`}
+            statusText={isCriticalLow ? 'ALERT (<=5cm)' : isNearOverflow ? 'OVERFLOW (>=20cm)' : 'OPTIMAL'}
+            statusColor={isCriticalLow ? '#EF4444' : isNearOverflow ? '#F59E0B' : '#10B981'}
+            statusBg={isCriticalLow ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.15)'}
+            subtext={`${data.tankLevel.toFixed(0)}% • ${((data.tankLevel / 100) * (data.tankCapacityLiters || 20)).toFixed(1)} / ${data.tankCapacityLiters || 20} L`}
           />
 
           {/* 4. Leak Risk Index */}
@@ -172,7 +187,7 @@ export default function DashboardScreen() {
             statusBg={isPumpRunning ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)'}
           />
 
-          {/* 6. Water Quality / pH */}
+          {/* 6. Water Quality (TDS & Turbidity) */}
           <MetricTile
             label="Water Quality"
             value={data.pHLevel.toFixed(1)}
@@ -180,9 +195,10 @@ export default function DashboardScreen() {
             icon={FlaskConical}
             iconColor="#A855F7"
             variant="cyan"
-            statusText={`${data.waterTurbidityNTU.toFixed(1)} NTU`}
+            statusText={`${data.waterTurbidityNTU.toFixed(2)} NTU • ${data.tdsLevel.toFixed(0)} PPM`}
             statusColor="#C084FC"
             statusBg="rgba(168, 85, 247, 0.15)"
+            subtext={`Turb: ${data.waterTurbidityNTU.toFixed(2)} NTU | TDS: ${data.tdsLevel.toFixed(0)} PPM`}
           />
         </View>
       </ScrollView>

@@ -93,10 +93,11 @@ def register_exception_handlers(app: FastAPI) -> None:
             error_msgs.append(f"{loc}: {msg}")
         
         combined_msg = "Validation Error: " + "; ".join(error_msgs)
-        logger.warning(f"ValidationError: {combined_msg} - Path: {request.url.path}")
+        logger.warning(f"ValidationError: {combined_msg} - Path: {request.url.path} - Raw Body: {getattr(exc, 'body', None)!r}")
         
+        status_code = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422)
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status_code,
             content={
                 "success": False,
                 "message": combined_msg,
